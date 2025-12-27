@@ -62,7 +62,7 @@ export function IterationTimeline({
   }, [selectedIteration]);
 
   return (
-    <div className="border-b border-border bg-card/30 flex-shrink-0">
+    <div className="border-b border-border bg-muted/30 flex-shrink-0">
       <ScrollArea className="w-full">
         <div className="flex gap-2 p-3">
           {iterations.map((iteration, idx) => {
@@ -79,12 +79,12 @@ export function IterationTimeline({
                 className={cn(
                   'flex-shrink-0 w-72 cursor-pointer transition-all duration-150 rounded-lg border',
                   isSelected
-                    ? 'border-[oklch(0.8_0.15_195)] bg-[oklch(0.8_0.15_195/0.1)] shadow-md shadow-[oklch(0.8_0.15_195/0.15)]'
+                    ? 'border-primary bg-primary/10 shadow-md shadow-primary/15'
                     : stats.hasFinal
-                      ? 'border-[oklch(0.75_0.2_145/0.4)] bg-[oklch(0.75_0.2_145/0.03)] hover:border-[oklch(0.75_0.2_145/0.6)]'
+                      ? 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 dark:border-emerald-400/40 dark:bg-emerald-400/5'
                       : stats.hasError
-                        ? 'border-[oklch(0.65_0.25_25/0.4)] bg-[oklch(0.65_0.25_25/0.03)] hover:border-[oklch(0.65_0.25_25/0.6)]'
-                        : 'border-border hover:border-[oklch(0.8_0.15_195/0.4)] hover:bg-muted/20'
+                        ? 'border-red-500/40 bg-red-500/5 hover:border-red-500/60 dark:border-red-400/40 dark:bg-red-400/5'
+                        : 'border-border hover:border-primary/40 hover:bg-muted/50'
                 )}
               >
                 {/* Compact single-row layout */}
@@ -93,11 +93,11 @@ export function IterationTimeline({
                   <div className={cn(
                     'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0',
                     isSelected
-                      ? 'bg-[oklch(0.8_0.15_195)] text-[oklch(0.1_0.02_260)]'
+                      ? 'bg-primary text-primary-foreground'
                       : stats.hasFinal
-                        ? 'bg-[oklch(0.75_0.2_145)] text-white'
+                        ? 'bg-emerald-500 text-white dark:bg-emerald-400'
                         : stats.hasError
-                          ? 'bg-[oklch(0.65_0.25_25)] text-white'
+                          ? 'bg-red-500 text-white dark:bg-red-400'
                           : 'bg-muted text-muted-foreground'
                   )}>
                     {idx + 1}
@@ -108,7 +108,7 @@ export function IterationTimeline({
                     {/* Top row: badges */}
                     <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                       {stats.hasFinal && (
-                        <Badge className="bg-[oklch(0.9_0.18_90/0.2)] text-[oklch(0.9_0.18_90)] border-[oklch(0.9_0.18_90/0.3)] text-[9px] px-1 py-0 h-4">
+                        <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[9px] px-1 py-0 h-4">
                           FINAL
                         </Badge>
                       )}
@@ -118,12 +118,12 @@ export function IterationTimeline({
                         </Badge>
                       )}
                       {stats.codeBlocks > 0 && (
-                        <span className="text-[10px] text-[oklch(0.75_0.2_145)]">
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
                           {stats.codeBlocks} code
                         </span>
                       )}
                       {stats.subCalls > 0 && (
-                        <span className="text-[10px] text-[oklch(0.7_0.2_320)]">
+                        <span className="text-[10px] text-fuchsia-600 dark:text-fuchsia-400">
                           {stats.subCalls} sub
                         </span>
                       )}
@@ -140,14 +140,14 @@ export function IterationTimeline({
                     {/* Bottom row: tokens */}
                     <div className="flex items-center gap-2 mt-1 text-[9px] font-mono text-muted-foreground/70">
                       <span>
-                        <span className="text-[oklch(0.6_0.1_195)]">{(stats.inputTokens / 1000).toFixed(1)}k</span>
+                        <span className="text-sky-600 dark:text-sky-400">{(stats.inputTokens / 1000).toFixed(1)}k</span>
                         <span className="mx-0.5">→</span>
-                        <span className="text-[oklch(0.6_0.1_145)]">{(stats.outputTokens / 1000).toFixed(1)}k</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{(stats.outputTokens / 1000).toFixed(1)}k</span>
                       </span>
                       {stats.hasFinal && finalAnswer && (
                         <>
                           <span className="text-border">│</span>
-                          <span className="text-[oklch(0.9_0.18_90)] truncate max-w-[100px]">
+                          <span className="text-amber-600 dark:text-amber-400 truncate max-w-[100px]">
                             = {finalAnswer}
                           </span>
                         </>

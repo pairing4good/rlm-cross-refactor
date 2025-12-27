@@ -33,17 +33,17 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
   );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-border">
+      <div className="flex-shrink-0 p-4 border-b border-border bg-muted/30">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[oklch(0.75_0.2_145/0.1)] border border-[oklch(0.75_0.2_145/0.3)] flex items-center justify-center">
-              <span className="text-[oklch(0.75_0.2_145)] text-sm">⟨⟩</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+              <span className="text-emerald-500 text-sm">⟨⟩</span>
             </div>
             <div>
-              <h2 className="font-semibold">Execution Details</h2>
-              <p className="text-xs text-muted-foreground">
+              <h2 className="font-semibold text-sm">Execution Details</h2>
+              <p className="text-[11px] text-muted-foreground">
                 Iteration {iteration.iteration} • {new Date(iteration.timestamp).toLocaleString()}
               </p>
             </div>
@@ -56,12 +56,12 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
             {iteration.code_blocks.length} code block{iteration.code_blocks.length !== 1 ? 's' : ''}
           </Badge>
           {totalSubCalls > 0 && (
-            <Badge className="bg-[oklch(0.7_0.2_320/0.2)] text-[oklch(0.7_0.2_320)] border-[oklch(0.7_0.2_320/0.3)] text-xs">
+            <Badge className="bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/30 text-xs">
               {totalSubCalls} sub-LM call{totalSubCalls !== 1 ? 's' : ''}
             </Badge>
           )}
           {iteration.final_answer && (
-            <Badge className="bg-[oklch(0.9_0.18_90/0.2)] text-[oklch(0.9_0.18_90)] border-[oklch(0.9_0.18_90/0.3)] text-xs">
+            <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs">
               Has Final Answer
             </Badge>
           )}
@@ -108,15 +108,15 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
           <TabsContent value="response" className="h-full m-0 data-[state=active]:flex data-[state=active]:flex-col">
             <ScrollArea className="flex-1 h-full">
               <div className="p-4">
-                <Card className="border-[oklch(0.8_0.15_195/0.3)]">
+                <Card className="border-sky-500/30 dark:border-sky-400/30">
                   <CardHeader className="py-3 px-4">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[oklch(0.8_0.15_195)]" />
+                      <span className="w-2 h-2 rounded-full bg-sky-500 dark:bg-sky-400" />
                       Model Response
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
-                    <div className="bg-[oklch(0.06_0.015_260)] rounded-lg p-4 border border-border">
+                    <div className="bg-muted rounded-lg p-4 border border-border">
                       <pre className="text-sm whitespace-pre-wrap font-mono text-foreground/90 leading-relaxed">
                         {iteration.response}
                       </pre>
@@ -135,12 +135,12 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
                     (block.result?.rlm_calls || []).map((call, callIdx) => (
                       <Card 
                         key={`${blockIdx}-${callIdx}`}
-                        className="border-[oklch(0.7_0.2_320/0.3)] bg-[oklch(0.7_0.2_320/0.02)]"
+                        className="border-fuchsia-500/30 bg-fuchsia-500/5 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/5"
                       >
                         <CardHeader className="py-3 px-4">
                           <div className="flex items-center justify-between">
                             <CardTitle className="text-sm flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-[oklch(0.7_0.2_320)]" />
+                              <span className="w-2 h-2 rounded-full bg-fuchsia-500 dark:bg-fuchsia-400" />
                               llm_query() from Block #{blockIdx + 1}
                             </CardTitle>
                             <div className="flex gap-2">
@@ -161,7 +161,7 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
                             <p className="text-xs text-muted-foreground mb-1.5 font-medium uppercase tracking-wider">
                               Prompt
                             </p>
-                            <div className="bg-muted/30 rounded-lg p-3 max-h-32 overflow-y-auto">
+                            <div className="bg-muted/50 rounded-lg p-3 max-h-32 overflow-y-auto border border-border">
                               <pre className="text-xs whitespace-pre-wrap font-mono">
                                 {typeof call.prompt === 'string' 
                                   ? call.prompt 
@@ -173,8 +173,8 @@ export function ExecutionPanel({ iteration }: ExecutionPanelProps) {
                             <p className="text-xs text-muted-foreground mb-1.5 font-medium uppercase tracking-wider">
                               Response
                             </p>
-                            <div className="bg-[oklch(0.7_0.2_320/0.05)] rounded-lg p-3 max-h-48 overflow-y-auto border border-[oklch(0.7_0.2_320/0.2)]">
-                              <pre className="text-xs whitespace-pre-wrap font-mono text-[oklch(0.85_0.1_320)]">
+                            <div className="bg-fuchsia-500/10 dark:bg-fuchsia-400/10 rounded-lg p-3 max-h-48 overflow-y-auto border border-fuchsia-500/20 dark:border-fuchsia-400/20">
+                              <pre className="text-xs whitespace-pre-wrap font-mono text-fuchsia-700 dark:text-fuchsia-300">
                                 {call.response}
                               </pre>
                             </div>

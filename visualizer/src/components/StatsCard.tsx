@@ -12,19 +12,19 @@ interface StatsCardProps {
 }
 
 const variantStyles = {
-  cyan: 'border-[oklch(0.8_0.15_195/0.3)] bg-[oklch(0.8_0.15_195/0.05)]',
-  magenta: 'border-[oklch(0.7_0.2_320/0.3)] bg-[oklch(0.7_0.2_320/0.05)]',
-  yellow: 'border-[oklch(0.9_0.18_90/0.3)] bg-[oklch(0.9_0.18_90/0.05)]',
-  green: 'border-[oklch(0.75_0.2_145/0.3)] bg-[oklch(0.75_0.2_145/0.05)]',
-  red: 'border-[oklch(0.65_0.25_25/0.3)] bg-[oklch(0.65_0.25_25/0.05)]',
+  cyan: 'border-sky-500/30 bg-sky-500/5 dark:border-sky-400/30 dark:bg-sky-400/5',
+  magenta: 'border-fuchsia-500/30 bg-fuchsia-500/5 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/5',
+  yellow: 'border-amber-500/30 bg-amber-500/5 dark:border-amber-400/30 dark:bg-amber-400/5',
+  green: 'border-emerald-500/30 bg-emerald-500/5 dark:border-emerald-400/30 dark:bg-emerald-400/5',
+  red: 'border-red-500/30 bg-red-500/5 dark:border-red-400/30 dark:bg-red-400/5',
 };
 
 const textStyles = {
-  cyan: 'text-[oklch(0.8_0.15_195)]',
-  magenta: 'text-[oklch(0.7_0.2_320)]',
-  yellow: 'text-[oklch(0.9_0.18_90)]',
-  green: 'text-[oklch(0.75_0.2_145)]',
-  red: 'text-[oklch(0.65_0.25_25)]',
+  cyan: 'text-sky-600 dark:text-sky-400',
+  magenta: 'text-fuchsia-600 dark:text-fuchsia-400',
+  yellow: 'text-amber-600 dark:text-amber-400',
+  green: 'text-emerald-600 dark:text-emerald-400',
+  red: 'text-red-600 dark:text-red-400',
 };
 
 export function StatsCard({ label, value, icon, variant = 'cyan', subtext }: StatsCardProps) {
@@ -56,4 +56,3 @@ export function StatsCard({ label, value, icon, variant = 'cyan', subtext }: Sta
     </Card>
   );
 }
-

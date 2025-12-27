@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FileUploader } from './FileUploader';
 import { LogViewer } from './LogViewer';
 import { AsciiRLM } from './AsciiGlobe';
+import { ThemeToggle } from './ThemeToggle';
 import { parseLogFile, extractContextVariable } from '@/lib/parse-logs';
 import { RLMLogFile } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -101,30 +102,33 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Background effects - green tinted */}
-      <div className="absolute inset-0 grid-pattern opacity-15" />
-      <div className="absolute top-0 left-1/3 w-[500px] h-[500px] bg-[oklch(0.5_0.15_145/0.08)] rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[oklch(0.4_0.1_145/0.06)] rounded-full blur-3xl" />
+      {/* Background effects */}
+      <div className="absolute inset-0 grid-pattern opacity-30 dark:opacity-15" />
+      <div className="absolute top-0 left-1/3 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl" />
       
       <div className="relative z-10">
         {/* Header */}
-        <header className="border-b border-[oklch(0.3_0.05_145/0.3)]">
+        <header className="border-b border-border">
           <div className="max-w-7xl mx-auto px-6 py-6">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">
-                  <span className="text-[oklch(0.7_0.18_145)]">RLM</span>
+                  <span className="text-primary">RLM</span>
                   <span className="text-muted-foreground ml-2 font-normal">Visualizer</span>
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
                   Debug recursive language model execution traces
                 </p>
               </div>
-              <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-mono">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[oklch(0.7_0.2_145)] animate-pulse" />
-                  READY
-                </span>
+              <div className="flex items-center gap-4">
+                <ThemeToggle />
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                    READY
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -138,7 +142,7 @@ export function Dashboard() {
               {/* Upload Section */}
               <div>
                 <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-[oklch(0.7_0.18_145)] font-mono">01</span>
+                  <span className="text-primary font-mono">01</span>
                   Upload Log File
                 </h2>
                 <FileUploader onFileLoaded={handleFileLoaded} />
@@ -147,10 +151,10 @@ export function Dashboard() {
               {/* ASCII Architecture Diagram */}
               <div className="hidden lg:block">
                 <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-[oklch(0.7_0.18_145)] font-mono">◈</span>
+                  <span className="text-primary font-mono">◈</span>
                   RLM Architecture
                 </h2>
-                <div className="bg-[oklch(0.08_0.01_145/0.5)] border border-[oklch(0.3_0.05_145/0.3)] rounded-lg p-4 overflow-x-auto">
+                <div className="bg-muted/50 border border-border rounded-lg p-4 overflow-x-auto">
                   <AsciiRLM />
                 </div>
               </div>
@@ -161,13 +165,13 @@ export function Dashboard() {
               {/* Demo Logs Section */}
               <div>
                 <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                  <span className="text-[oklch(0.7_0.18_145)] font-mono">02</span>
+                  <span className="text-primary font-mono">02</span>
                   Recent Traces
                   <span className="text-[10px] text-muted-foreground/60 ml-1">(latest 10)</span>
                 </h2>
                 
                 {loadingDemos ? (
-                  <Card className="border-[oklch(0.3_0.05_145/0.3)]">
+                  <Card>
                     <CardContent className="p-6 text-center">
                       <div className="animate-pulse flex items-center justify-center gap-2 text-muted-foreground text-sm">
                         Loading traces...
@@ -175,7 +179,7 @@ export function Dashboard() {
                     </CardContent>
                   </Card>
                 ) : demoLogs.length === 0 ? (
-                  <Card className="border-dashed border-[oklch(0.3_0.05_145/0.3)]">
+                  <Card className="border-dashed">
                     <CardContent className="p-6 text-center text-muted-foreground text-sm">
                       No log files found in /public/logs/
                     </CardContent>
@@ -189,8 +193,7 @@ export function Dashboard() {
                           onClick={() => loadDemoLog(demo.fileName)}
                           className={cn(
                             'cursor-pointer transition-all hover:scale-[1.01]',
-                            'border-[oklch(0.3_0.05_145/0.3)] hover:border-[oklch(0.5_0.15_145/0.5)]',
-                            'hover:bg-[oklch(0.5_0.15_145/0.03)]'
+                            'hover:border-primary/50 hover:bg-primary/5'
                           )}
                         >
                           <CardContent className="p-3">
@@ -200,11 +203,11 @@ export function Dashboard() {
                                 <div className={cn(
                                   'w-2.5 h-2.5 rounded-full',
                                   demo.hasFinalAnswer 
-                                    ? 'bg-[oklch(0.65_0.2_145)]' 
-                                    : 'bg-[oklch(0.4_0.05_45)]'
+                                    ? 'bg-primary' 
+                                    : 'bg-muted-foreground/30'
                                 )} />
                                 {demo.hasFinalAnswer && (
-                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[oklch(0.65_0.2_145)] animate-ping opacity-50" />
+                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-primary animate-ping opacity-50" />
                                 )}
                               </div>
                               
@@ -214,7 +217,7 @@ export function Dashboard() {
                                   <span className="font-mono text-xs text-foreground/80">
                                     {demo.fileName}
                                   </span>
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-[oklch(0.3_0.05_145/0.5)]">
+                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
                                     {demo.iterations} iter
                                   </Badge>
                                 </div>
@@ -239,7 +242,7 @@ export function Dashboard() {
               {logFiles.length > 0 && (
                 <div>
                   <h2 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
-                    <span className="text-[oklch(0.7_0.18_145)] font-mono">03</span>
+                    <span className="text-primary font-mono">03</span>
                     Loaded Files
                   </h2>
                   <ScrollArea className="h-[200px]">
@@ -249,8 +252,7 @@ export function Dashboard() {
                           key={log.fileName}
                           className={cn(
                             'cursor-pointer transition-all hover:scale-[1.01]',
-                            'border-[oklch(0.3_0.05_145/0.3)] hover:border-[oklch(0.5_0.15_145/0.5)]',
-                            'hover:bg-[oklch(0.5_0.15_145/0.03)]'
+                            'hover:border-primary/50 hover:bg-primary/5'
                           )}
                           onClick={() => setSelectedLog(log)}
                         >
@@ -260,11 +262,11 @@ export function Dashboard() {
                                 <div className={cn(
                                   'w-2.5 h-2.5 rounded-full',
                                   log.metadata.finalAnswer 
-                                    ? 'bg-[oklch(0.65_0.2_145)]' 
-                                    : 'bg-[oklch(0.4_0.05_45)]'
+                                    ? 'bg-primary' 
+                                    : 'bg-muted-foreground/30'
                                 )} />
                                 {log.metadata.finalAnswer && (
-                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[oklch(0.65_0.2_145)] animate-ping opacity-50" />
+                                  <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-primary animate-ping opacity-50" />
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
@@ -272,7 +274,7 @@ export function Dashboard() {
                                   <span className="font-mono text-xs truncate text-foreground/80">
                                     {log.fileName}
                                   </span>
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-[oklch(0.3_0.05_145/0.5)]">
+                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
                                     {log.metadata.totalIterations} iter
                                   </Badge>
                                 </div>
@@ -293,7 +295,7 @@ export function Dashboard() {
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-[oklch(0.3_0.05_145/0.3)] mt-8">
+        <footer className="border-t border-border mt-8">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[10px] text-muted-foreground font-mono">
               RLM Visualizer • Recursive Language Models

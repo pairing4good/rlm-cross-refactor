@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { RLMIteration, extractFinalAnswer } from '@/lib/types';
 
@@ -14,34 +14,58 @@ interface TrajectoryPanelProps {
   onSelectIteration: (index: number) => void;
 }
 
+// Helper to format message content for display
+function formatMessageContent(content: string): string {
+  // Truncate very long content
+  if (content.length > 3000) {
+    return content.slice(0, 3000) + '\n\n... [content truncated for display]';
+  }
+  return content;
+}
+
+// Render a role badge
+function RoleBadge({ role }: { role: string }) {
+  const config = {
+    system: { label: 'System', className: 'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30' },
+    user: { label: 'User', className: 'bg-primary/15 text-primary border-primary/30' },
+    assistant: { label: 'Assistant', className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30' },
+  }[role] || { label: role, className: 'bg-muted text-muted-foreground' };
+
+  return (
+    <Badge variant="outline" className={cn('text-[10px] font-medium', config.className)}>
+      {config.label}
+    </Badge>
+  );
+}
+
 export function TrajectoryPanel({ 
   iterations, 
   selectedIteration, 
   onSelectIteration 
 }: TrajectoryPanelProps) {
-  const [viewMode, setViewMode] = useState<'timeline' | 'messages'>('timeline');
+  const [viewMode, setViewMode] = useState<'timeline' | 'messages'>('messages');
 
   const currentIteration = iterations[selectedIteration];
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/30">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[oklch(0.8_0.15_195/0.1)] border border-[oklch(0.8_0.15_195/0.3)] flex items-center justify-center">
-            <span className="text-[oklch(0.8_0.15_195)] text-sm">◈</span>
+          <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
+            <span className="text-sky-500 text-sm">◈</span>
           </div>
           <div>
-            <h2 className="font-semibold">Trajectory</h2>
-            <p className="text-xs text-muted-foreground">
-              Root LM conversation flow
+            <h2 className="font-semibold text-sm">Trajectory</h2>
+            <p className="text-[11px] text-muted-foreground">
+              Iteration {selectedIteration + 1} of {iterations.length}
             </p>
           </div>
         </div>
         <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'timeline' | 'messages')}>
-          <TabsList className="h-8">
-            <TabsTrigger value="timeline" className="text-xs px-3">Timeline</TabsTrigger>
-            <TabsTrigger value="messages" className="text-xs px-3">Messages</TabsTrigger>
+          <TabsList className="h-7">
+            <TabsTrigger value="messages" className="text-[11px] px-2.5 h-6">Messages</TabsTrigger>
+            <TabsTrigger value="timeline" className="text-[11px] px-2.5 h-6">Timeline</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -52,81 +76,83 @@ export function TrajectoryPanel({
           <div className="p-4">
             <div className="relative">
               {/* Timeline line */}
-              <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gradient-to-b from-[oklch(0.8_0.15_195/0.5)] via-[oklch(0.7_0.2_320/0.5)] to-[oklch(0.75_0.2_145/0.5)]" />
+              <div className="absolute left-[18px] top-2 bottom-2 w-0.5 bg-border" />
               
               {/* Iterations */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {iterations.map((iter, idx) => {
                   const hasFinal = iter.final_answer !== null;
                   const hasCode = iter.code_blocks.length > 0;
                   const hasError = iter.code_blocks.some(b => b.result?.stderr);
+                  const isSelected = selectedIteration === idx;
                   
                   return (
                     <div
                       key={idx}
                       onClick={() => onSelectIteration(idx)}
                       className={cn(
-                        'relative pl-12 cursor-pointer group transition-all',
-                        selectedIteration === idx && 'scale-[1.01]'
+                        'relative pl-10 cursor-pointer group transition-all',
+                        isSelected && 'scale-[1.01]'
                       )}
                     >
                       {/* Timeline dot */}
                       <div 
                         className={cn(
-                          'absolute left-3 top-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                          selectedIteration === idx
-                            ? 'bg-[oklch(0.8_0.15_195)] border-[oklch(0.8_0.15_195)] scale-110 shadow-[0_0_12px_oklch(0.8_0.15_195/0.5)]'
+                          'absolute left-2.5 top-3 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all z-10',
+                          isSelected
+                            ? 'bg-primary border-primary scale-110 shadow-lg shadow-primary/30'
                             : hasFinal
-                              ? 'bg-[oklch(0.75_0.2_145)] border-[oklch(0.75_0.2_145)]'
+                              ? 'bg-emerald-500 border-emerald-500'
                               : hasError
-                                ? 'bg-[oklch(0.65_0.25_25)] border-[oklch(0.65_0.25_25)]'
-                                : 'bg-muted border-border group-hover:border-[oklch(0.8_0.15_195/0.5)]'
+                                ? 'bg-destructive border-destructive'
+                                : 'bg-card border-border group-hover:border-primary/50'
                         )}
                       >
-                        <span className="text-[10px] font-bold text-primary-foreground">
+                        <span className={cn(
+                          'text-[9px] font-bold',
+                          isSelected || hasFinal || hasError ? 'text-white' : 'text-muted-foreground'
+                        )}>
                           {idx + 1}
                         </span>
                       </div>
                       
                       {/* Card */}
                       <Card className={cn(
-                        'border transition-all',
-                        selectedIteration === idx
-                          ? 'border-[oklch(0.8_0.15_195/0.5)] bg-[oklch(0.8_0.15_195/0.05)] shadow-lg shadow-[oklch(0.8_0.15_195/0.1)]'
-                          : 'border-border hover:border-[oklch(0.8_0.15_195/0.3)] hover:bg-muted/20'
+                        'transition-all border',
+                        isSelected
+                          ? 'border-primary/50 bg-primary/5 shadow-md'
+                          : 'hover:border-primary/30 hover:bg-muted/30'
                       )}>
-                        <CardContent className="p-3">
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="text-[10px]">
-                                Iter {iter.iteration}
+                        <div className="p-3">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className="text-[11px] font-medium text-foreground">
+                              Iteration {iter.iteration}
+                            </span>
+                            {hasCode && (
+                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4">
+                                {iter.code_blocks.length} code
                               </Badge>
-                              {hasCode && (
-                                <Badge className="bg-[oklch(0.75_0.2_145/0.2)] text-[oklch(0.75_0.2_145)] border-[oklch(0.75_0.2_145/0.3)] text-[10px]">
-                                  {iter.code_blocks.length} code
-                                </Badge>
-                              )}
-                              {hasFinal && (
-                                <Badge className="bg-[oklch(0.9_0.18_90/0.2)] text-[oklch(0.9_0.18_90)] border-[oklch(0.9_0.18_90/0.3)] text-[10px]">
-                                  ✓ Final
-                                </Badge>
-                              )}
-                              {hasError && (
-                                <Badge variant="destructive" className="text-[10px]">
-                                  Error
-                                </Badge>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            )}
+                            {hasFinal && (
+                              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] px-1.5 py-0 h-4">
+                                ✓ Answer
+                              </Badge>
+                            )}
+                            {hasError && (
+                              <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4">
+                                Error
+                              </Badge>
+                            )}
+                            <span className="text-[10px] text-muted-foreground ml-auto">
                               {new Date(iter.timestamp).toLocaleTimeString()}
                             </span>
                           </div>
                           
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {iter.response.slice(0, 150)}
-                            {iter.response.length > 150 ? '...' : ''}
+                          <p className="text-[12px] text-muted-foreground line-clamp-2 leading-relaxed">
+                            {iter.response.slice(0, 120)}
+                            {iter.response.length > 120 ? '...' : ''}
                           </p>
-                        </CardContent>
+                        </div>
                       </Card>
                     </div>
                   );
@@ -136,74 +162,70 @@ export function TrajectoryPanel({
           </div>
         ) : (
           <div className="p-4 space-y-4">
+            {/* Prompt messages */}
             {currentIteration?.prompt.map((msg, idx) => (
-              <Card 
+              <div 
                 key={idx}
                 className={cn(
-                  'border',
-                  msg.role === 'system' 
-                    ? 'border-[oklch(0.7_0.2_320/0.3)] bg-[oklch(0.7_0.2_320/0.03)]'
-                    : msg.role === 'assistant'
-                      ? 'border-[oklch(0.8_0.15_195/0.3)] bg-[oklch(0.8_0.15_195/0.03)]'
-                      : 'border-border'
+                  'message-bubble',
+                  msg.role === 'system' && 'message-bubble-system',
+                  msg.role === 'user' && 'message-bubble-user',
+                  msg.role === 'assistant' && 'message-bubble-assistant'
                 )}
               >
-                <CardHeader className="py-2 px-3">
-                  <CardTitle className="text-xs flex items-center gap-2">
-                    <span 
-                      className={cn(
-                        'w-2 h-2 rounded-full',
-                        msg.role === 'system' ? 'bg-[oklch(0.7_0.2_320)]' :
-                        msg.role === 'assistant' ? 'bg-[oklch(0.8_0.15_195)]' :
-                        'bg-[oklch(0.75_0.2_145)]'
-                      )}
-                    />
-                    {msg.role.charAt(0).toUpperCase() + msg.role.slice(1)}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="py-2 px-3">
-                  <ScrollArea className="max-h-48">
-                    <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground">
-                      {msg.content.slice(0, 2000)}
-                      {msg.content.length > 2000 ? '\n\n... [truncated]' : ''}
-                    </pre>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
+                <div className="flex items-center gap-2 mb-3">
+                  <RoleBadge role={msg.role} />
+                  {msg.role === 'system' && (
+                    <span className="text-[10px] text-muted-foreground">Initial prompt</span>
+                  )}
+                </div>
+                <div className="prose-trajectory">
+                  <pre className="whitespace-pre-wrap font-mono text-foreground/90 text-[13px] leading-relaxed">
+                    {formatMessageContent(msg.content)}
+                  </pre>
+                </div>
+              </div>
             ))}
             
             {/* Current response */}
-            <Card className="border-[oklch(0.8_0.15_195/0.5)] bg-[oklch(0.8_0.15_195/0.05)]">
-              <CardHeader className="py-2 px-3">
-                <CardTitle className="text-xs flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[oklch(0.8_0.15_195)]" />
-                  Response (Iteration {currentIteration?.iteration})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="py-2 px-3">
-                <ScrollArea className="max-h-64">
-                  <pre className="text-xs whitespace-pre-wrap font-mono">
-                    {currentIteration?.response || 'No response'}
+            {currentIteration?.response && (
+              <div className="message-bubble message-bubble-assistant">
+                <div className="flex items-center gap-2 mb-3">
+                  <RoleBadge role="assistant" />
+                  <span className="text-[10px] text-muted-foreground">
+                    Response • Iteration {currentIteration.iteration}
+                  </span>
+                  {currentIteration.code_blocks.length > 0 && (
+                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 ml-auto">
+                      {currentIteration.code_blocks.length} code block{currentIteration.code_blocks.length !== 1 ? 's' : ''}
+                    </Badge>
+                  )}
+                </div>
+                <div className="prose-trajectory">
+                  <pre className="whitespace-pre-wrap font-mono text-foreground/90 text-[13px] leading-relaxed">
+                    {formatMessageContent(currentIteration.response)}
                   </pre>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                </div>
+              </div>
+            )}
 
-            {/* Final answer if present */}
+            {/* Final answer highlight */}
             {currentIteration?.final_answer && (
-              <Card className="border-[oklch(0.9_0.18_90/0.5)] bg-[oklch(0.9_0.18_90/0.05)]">
-                <CardHeader className="py-2 px-3">
-                  <CardTitle className="text-xs flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[oklch(0.9_0.18_90)]" />
+              <div className="rounded-xl border-2 border-emerald-500/50 bg-emerald-500/10 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
                     Final Answer
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="py-2 px-3">
-                  <p className="text-sm font-medium text-[oklch(0.9_0.18_90)]">
-                    {extractFinalAnswer(currentIteration.final_answer)}
-                  </p>
-                </CardContent>
-              </Card>
+                  </span>
+                </div>
+                <p className="text-[15px] font-medium text-foreground leading-relaxed">
+                  {extractFinalAnswer(currentIteration.final_answer)}
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -211,4 +233,3 @@ export function TrajectoryPanel({
     </div>
   );
 }
-
