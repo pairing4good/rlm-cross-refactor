@@ -174,6 +174,7 @@ class TestRLMMetadata:
             root_model="gpt-4",
             max_depth=2,
             max_iterations=10,
+            max_tokens=50000,
             backend="openai",
             backend_kwargs={"api_key": "secret"},
             environment_type="local",
@@ -182,4 +183,21 @@ class TestRLMMetadata:
         d = meta.to_dict()
         assert d["root_model"] == "gpt-4"
         assert d["max_depth"] == 2
+        assert d["max_tokens"] == 50000
         assert d["backend"] == "openai"
+
+    def test_to_dict_with_none_max_tokens(self):
+        """Test that max_tokens can be None."""
+        meta = RLMMetadata(
+            root_model="gpt-4",
+            max_depth=2,
+            max_iterations=10,
+            max_tokens=None,  # Unlimited
+            backend="openai",
+            backend_kwargs={"api_key": "secret"},
+            environment_type="local",
+            environment_kwargs={},
+        )
+        d = meta.to_dict()
+        assert d["max_tokens"] is None
+        assert d["root_model"] == "gpt-4"

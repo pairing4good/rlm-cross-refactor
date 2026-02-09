@@ -62,6 +62,60 @@ docker --version
 
 ---
 
+## Understanding Token Limits & Costs
+
+{: .warning }
+> **IMPORTANT: Default Token Limit**  
+> RLM has a built-in safety limit of **1,000,000 tokens per session** to prevent unexpectedly large API bills.
+
+### What does 1M tokens cost?
+
+The cost varies by model:
+
+| Model | Approximate Cost for 1M Tokens |
+|:------|:-------------------------------|
+| GPT-3.5 Turbo | ~$1 |
+| GPT-4o | ~$6 |
+| GPT-4o-mini | ~$0.30 |
+| GPT-4 Turbo | ~$20 |
+| Claude Sonnet 4 | ~$9 |
+| Claude Opus | ~$45 |
+
+### How to adjust the limit
+
+```python
+# Reduce limit for tighter budget control
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=100_000,  # Limit to ~$0.60 per session
+)
+
+# Increase limit for complex tasks
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=5_000_000,  # Allow up to ~$30 per session
+)
+
+# Remove limit entirely (use with caution!)
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=None,  # Unlimited - monitor your usage!
+)
+```
+
+### What happens when the limit is reached?
+
+When your session hits the token limit:
+1. RLM stops before the next iteration
+2. Returns a clear message: `"Session ended: Token limit exceeded. Used X tokens (limit: Y)..."`
+3. Logs the event (if logging is enabled)
+4. You still receive usage statistics and timing information
+
+---
+
 ## Your First RLM Call
 
 ### Step 1: Set Up API Keys
@@ -133,6 +187,7 @@ This will display:
 | `environment_kwargs` | `dict` | `None` | Environment configuration |
 | `max_depth` | `int` | `1` | Maximum recursion depth |
 | `max_iterations` | `int` | `30` | Max REPL iterations per call |
+| `max_tokens` | `int` | `1_000_000` | **Max total tokens per session** (see [Token Limits](#understanding-token-limits--costs)) |
 | `custom_system_prompt` | `str` | `None` | Override default system prompt |
 | `other_backends` | `list` | `None` | Additional backends for sub-calls |
 | `other_backend_kwargs` | `list` | `None` | Configs for additional backends |

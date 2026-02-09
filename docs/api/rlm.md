@@ -45,6 +45,7 @@ RLM(
     depth: int = 0,
     max_depth: int = 1,
     max_iterations: int = 30,
+    max_tokens: int | None = None,
     custom_system_prompt: str | None = None,
     other_backends: list[str] | None = None,
     other_backend_kwargs: list[dict] | None = None,
@@ -184,6 +185,83 @@ rlm = RLM(
     max_iterations=50,
 )
 ```
+
+---
+
+#### `max_tokens`
+{: .no_toc }
+
+**Type:** `int | None`  
+**Default:** `1_000_000` (1 million tokens)
+
+Maximum total tokens (input + output combined) allowed per `completion()` session. When this limit is reached or exceeded, the session ends early to stay within the token budget.
+
+{: .warning }
+> **This is a cost protection feature!** The default limit prevents unexpectedly large API bills.
+
+**Cost implications of 1M tokens:**
+
+| Model | Cost for 1M Tokens |
+|:------|:-------------------|
+| GPT-3.5 Turbo | ~$1 |
+| GPT-4o | ~$6 |
+| GPT-4o-mini | ~$0.30 |
+| GPT-4 Turbo | ~$20 |
+| Claude Sonnet 4 | ~$9 |
+| Claude Opus | ~$45 |
+
+**Token counting:**
+- Includes all LM calls (main model + sub-LM calls via `llm_query()`)
+- Tracks cumulative usage across all iterations in a single session
+- Resets for each new `completion()` call (even in persistent mode)
+
+**Examples:**
+
+```python
+# Use default 1M token limit (recommended for most use cases)
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    # max_tokens=1_000_000 is implicit
+)
+
+# Reduce limit for stricter budget control
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=100_000,  # Limit to ~$0.60 per session
+)
+
+# Increase limit for complex, expensive tasks
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=5_000_000,  # Allow up to ~$30 per session
+)
+
+# Remove limit entirely (not recommended - use with caution!)
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_tokens=None,  # Unlimited - can result in large bills!
+)
+
+result = rlm.completion("Analyze this dataset...")
+# If limit is hit:
+# result.response == "Session ended: Token limit exceeded. Used 1,000,234 tokens..."
+```
+
+**When the limit is exceeded:**
+- The session stops before the next iteration
+- A clear message is returned in `result.response`
+- The event is logged (if a logger is configured)
+- Usage summary and execution time are still populated
+
+**Use cases:**
+- **Budget control**: Prevent runaway costs on complex tasks (default behavior)
+- **Cost management**: Set organization-wide limits in production
+- **Development**: Use lower limits during testing/debugging
+- **Production**: Increase limits for known expensive workflows
 
 ---
 
@@ -446,6 +524,7 @@ rlm = RLM(
     
     # Behavior
     max_iterations=40,
+    max_tokens=100_000,  # Budget control
     max_depth=1,
     
     # Debugging

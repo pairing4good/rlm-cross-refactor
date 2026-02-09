@@ -354,6 +354,7 @@ class VerbosePrinter:
         total_iterations: int,
         total_time: float,
         usage_summary: dict[str, Any] | None = None,
+        stopped_reason: str | None = None,
     ) -> None:
         """Print a summary at the end of execution."""
         if not self.enabled:
@@ -371,6 +372,10 @@ class VerbosePrinter:
 
         summary_table.add_row("Iterations", str(total_iterations))
         summary_table.add_row("Total Time", f"{total_time:.2f}s")
+
+        if stopped_reason:
+            reason_display = stopped_reason.replace("_", " ").title()
+            summary_table.add_row("Status", f"Stopped: {reason_display}")
 
         if usage_summary:
             total_input = sum(
@@ -390,4 +395,43 @@ class VerbosePrinter:
         self.console.print(Rule(style=COLORS["border"], characters="═"))
         self.console.print(summary_table, justify="center")
         self.console.print(Rule(style=COLORS["border"], characters="═"))
+        self.console.print()
+
+    def print_token_limit_hit(
+        self, max_tokens: int, tokens_used: int, iteration: int
+    ) -> None:
+        """Print a warning when token limit is exceeded."""
+        if not self.enabled:
+            return
+
+        # Title
+        title = Text()
+        title.append("⚠ ", style=STYLE_WARNING)
+        title.append("Token Limit Exceeded", style=Style(color=COLORS["warning"], bold=True))
+
+        # Content
+        content = Text()
+        content.append(f"Maximum tokens: ", style=STYLE_TEXT)
+        content.append(f"{max_tokens:,}\n", style=STYLE_ACCENT)
+        content.append(f"Tokens used: ", style=STYLE_TEXT)
+        content.append(f"{tokens_used:,}\n\n", style=STYLE_WARNING)
+        content.append(
+            f"Session ended after {iteration} iteration(s).\n",
+            style=STYLE_MUTED,
+        )
+        content.append(
+            "The session was stopped before completion to stay within the token budget.",
+            style=STYLE_MUTED,
+        )
+
+        panel = Panel(
+            content,
+            title=title,
+            title_align="left",
+            border_style=COLORS["warning"],
+            padding=(1, 2),
+        )
+
+        self.console.print()
+        self.console.print(panel)
         self.console.print()

@@ -41,6 +41,19 @@ You can try out RLMs quickly by installing from PyPi:
 pip install rlms
 ```
 
+> [!IMPORTANT]
+> **Token Limit & Cost Protection**: RLM has a **default limit of 1,000,000 tokens per session** to prevent unexpectedly large bills. This costs approximately:
+> - GPT-3.5 Turbo: ~$1 per session
+> - GPT-4o: ~$6 per session  
+> - GPT-4 Turbo: ~$20 per session
+> - Claude Opus: ~$45 per session
+>
+> To change this limit:
+> ```python
+> rlm = RLM(max_tokens=500_000)  # Reduce to 500k tokens
+> rlm = RLM(max_tokens=None)      # Remove limit (use with caution!)
+> ```
+
 The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
 ```python
 from rlm import RLM
@@ -53,6 +66,11 @@ rlm = RLM(
 
 print(rlm.completion("Print me the first 100 powers of two, each on a newline.").response)
 ```
+
+**Understanding Your Token Budget:**
+- Each session (one `completion()` call) is limited to 1M tokens by default
+- You can check token usage: `result.usage_summary.to_dict()`
+- Adjust the limit with `max_tokens` parameter (see [Token Limits](#important-token-limit--cost-protection) above)
 
 <details>
 <summary><b>Manual Setup</b></summary>

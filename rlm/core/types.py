@@ -192,6 +192,7 @@ class RLMMetadata:
     root_model: str
     max_depth: int
     max_iterations: int
+    max_tokens: int | None
     backend: str
     backend_kwargs: dict[str, Any]
     environment_type: str
@@ -203,6 +204,7 @@ class RLMMetadata:
             "root_model": self.root_model,
             "max_depth": self.max_depth,
             "max_iterations": self.max_iterations,
+            "max_tokens": self.max_tokens,
             "backend": self.backend,
             "backend_kwargs": {k: _serialize_value(v) for k, v in self.backend_kwargs.items()},
             "environment_type": self.environment_type,

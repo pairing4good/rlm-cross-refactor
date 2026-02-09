@@ -58,6 +58,23 @@ class RLMLogger:
             json.dump(entry, f)
             f.write("\n")
 
+    def log_limit_hit(
+        self, limit_type: str, max_value: int, current_value: int, iteration: int
+    ):
+        """Log a limit hit event (e.g., token limit exceeded)."""
+        entry = {
+            "type": "limit_hit",
+            "limit_type": limit_type,
+            "max_value": max_value,
+            "current_value": current_value,
+            "iteration": iteration,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        with open(self.log_file_path, "a") as f:
+            json.dump(entry, f)
+            f.write("\n")
+
     @property
     def iteration_count(self) -> int:
         return self._iteration_count

@@ -12,6 +12,7 @@ from rlm.core.types import (
     RLMChatCompletion,
     RLMIteration,
     RLMMetadata,
+    UsageSummary,
 )
 from rlm.environments import BaseEnv, SupportsPersistence, get_environment
 from rlm.logger import RLMLogger, VerbosePrinter
@@ -46,6 +47,7 @@ class RLM:
         depth: int = 0,
         max_depth: int = 1,
         max_iterations: int = 30,
+        max_tokens: int | None = 1_000_000,
         custom_system_prompt: str | None = None,
         other_backends: list[ClientBackend] | None = None,
         other_backend_kwargs: list[dict[str, Any]] | None = None,
@@ -62,6 +64,12 @@ class RLM:
             depth: The current depth of the RLM (0-indexed).
             max_depth: The maximum depth of the RLM. Currently, only depth 1 is supported.
             max_iterations: The maximum number of iterations of the RLM.
+            max_tokens: The maximum total tokens (input + output) allowed per completion() session.
+                DEFAULT: 1,000,000 tokens to prevent unexpectedly large API bills.
+                COST ESTIMATE: 1M tokens costs ~$1-45 depending on your model:
+                  - GPT-3.5 Turbo: ~$1  |  GPT-4o: ~$6  |  GPT-4 Turbo: ~$20  |  Claude Opus: ~$45
+                Set to None for unlimited tokens (use with caution - can result in expensive bills).
+                Set to a smaller value (e.g., 100_000) for tighter budget control.
             custom_system_prompt: The custom system prompt to use for the RLM.
             other_backends: A list of other client backends that the environments can use to make sub-calls.
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
@@ -90,6 +98,7 @@ class RLM:
         self.depth = depth
         self.max_depth = max_depth
         self.max_iterations = max_iterations
+        self.max_tokens = max_tokens
         self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
@@ -110,6 +119,7 @@ class RLM:
                 else "unknown",
                 max_depth=max_depth,
                 max_iterations=max_iterations,
+                max_tokens=max_tokens,
                 backend=backend,
                 backend_kwargs=filter_sensitive_keys(backend_kwargs) if backend_kwargs else {},
                 environment_type=environment,
@@ -215,6 +225,16 @@ class RLM:
             message_history = self._setup_prompt(prompt)
 
             for i in range(self.max_iterations):
+                # Check token limit before starting next iteration
+                if self.max_tokens is not None:
+                    current_usage = lm_handler.get_usage_summary()
+                    tokens_used = self._calculate_total_tokens(current_usage)
+                    if tokens_used >= self.max_tokens:
+                        # Store message history in persistent environment
+                        if self.persistent and isinstance(environment, SupportsPersistence):
+                            environment.add_history(message_history)
+                        return self._token_limit_exceeded_answer(i, tokens_used, time_start, lm_handler)
+
                 # Current prompt = message history + additional prompt suffix
                 context_count = (
                     environment.get_context_count()
@@ -353,6 +373,62 @@ class RLM:
         client: BaseLM = get_client(self.backend, self.backend_kwargs)
         response = client.completion(message)
         return response
+
+    def _calculate_total_tokens(self, usage: UsageSummary) -> int:
+        """Calculate total tokens (input + output) from usage summary."""
+        total = 0
+        for model_usage in usage.model_usage_summaries.values():
+            total += model_usage.total_input_tokens + model_usage.total_output_tokens
+        return total
+
+    def _token_limit_exceeded_answer(
+        self,
+        iteration: int,
+        tokens_used: int,
+        time_start: float,
+        lm_handler: LMHandler,
+    ) -> RLMChatCompletion:
+        """
+        Handle early termination when token limit is exceeded.
+        Returns a completion indicating the session ended due to token limit.
+        """
+        time_end = time.perf_counter()
+        usage = lm_handler.get_usage_summary()
+
+        # Log the limit hit event
+        if self.logger:
+            self.logger.log_limit_hit(
+                limit_type="token_limit",
+                max_value=self.max_tokens,
+                current_value=tokens_used,
+                iteration=iteration,
+            )
+
+        # Print verbose output
+        self.verbose.print_token_limit_hit(
+            max_tokens=self.max_tokens,
+            tokens_used=tokens_used,
+            iteration=iteration,
+        )
+        self.verbose.print_summary(
+            iteration, time_end - time_start, usage.to_dict(), stopped_reason="token_limit"
+        )
+
+        response_message = (
+            f"Session ended: Token limit exceeded. "
+            f"Used {tokens_used:,} tokens (limit: {self.max_tokens:,}). "
+            f"Completed {iteration} iteration(s) before reaching limit."
+        )
+
+        return RLMChatCompletion(
+            root_model=self.backend_kwargs.get("model_name", "unknown")
+            if self.backend_kwargs
+            else "unknown",
+            prompt="",
+            response=response_message,
+            usage_summary=usage,
+            execution_time=time_end - time_start,
+        )
 
     def _validate_persistent_environment_support(self) -> None:
         """
