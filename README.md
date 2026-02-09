@@ -115,7 +115,27 @@ export PRIME_API_KEY=...
 
 
 ### Model Providers
-We currently support most major clients (OpenAI, Anthropic), as well as the router platforms (OpenRouter, Portkey, LiteLLM). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
+We currently support most major clients (OpenAI, Anthropic, AWS Bedrock), as well as the router platforms (OpenRouter, Portkey, LiteLLM). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
+
+#### AWS Bedrock
+To use AWS Bedrock models (Claude, Llama, Mistral, Titan), ensure you have AWS credentials configured via IAM role, AWS CLI, or environment variables:
+```bash
+uv pip install boto3
+```
+
+```python
+from rlm import RLM
+
+rlm = RLM(
+    backend="bedrock",
+    backend_kwargs={
+        "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "region_name": "us-east-1",
+        # Optional: aws_access_key_id, aws_secret_access_key
+    },
+    environment="local"
+)
+```
 
 ## Relevant Reading
 * **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
