@@ -58,9 +58,7 @@ class RLMLogger:
             json.dump(entry, f)
             f.write("\n")
 
-    def log_limit_hit(
-        self, limit_type: str, max_value: int, current_value: int, iteration: int
-    ):
+    def log_limit_hit(self, limit_type: str, max_value: int, current_value: int, iteration: int):
         """Log a limit hit event (e.g., token limit exceeded)."""
         entry = {
             "type": "limit_hit",

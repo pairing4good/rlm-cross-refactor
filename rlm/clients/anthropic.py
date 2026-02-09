@@ -19,7 +19,7 @@ class AnthropicClient(BaseLM):
         max_tokens: int = 32768,
         **kwargs,
     ):
-        super().__init__(model_name=model_name, **kwargs)
+        super().__init__(model_name=model_name or "claude-3-5-sonnet-20241022", **kwargs)
         self.client = anthropic.Anthropic(api_key=api_key)
         self.async_client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model_name = model_name
@@ -31,7 +31,9 @@ class AnthropicClient(BaseLM):
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         messages, system = self._prepare_messages(prompt)
 
         model = model or self.model_name
@@ -47,7 +49,7 @@ class AnthropicClient(BaseLM):
         return response.content[0].text
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
     ) -> str:
         messages, system = self._prepare_messages(prompt)
 
@@ -64,21 +66,18 @@ class AnthropicClient(BaseLM):
         return response.content[0].text
 
     def _prepare_messages(
-        self, prompt: str | list[dict[str, Any]]
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Prepare messages and extract system prompt for Anthropic API."""
         system = None
 
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
-            # Extract system message if present (Anthropic handles system separately)
-            messages = []
-            for msg in prompt:
-                if msg.get("role") == "system":
-                    system = msg.get("content")
-                else:
-                    messages.append(msg)
+        elif isinstance(prompt, dict):
+            # Single message dict - wrap in list
+            messages = [prompt]
+        elif isinstance(prompt, list):
+            messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
 

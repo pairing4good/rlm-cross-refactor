@@ -20,7 +20,7 @@ class LiteLLMClient(BaseLM):
         api_base: str | None = None,
         **kwargs,
     ):
-        super().__init__(model_name=model_name, **kwargs)
+        super().__init__(model_name=model_name or "gpt-4o", **kwargs)
         self.model_name = model_name
         self.api_key = api_key
         self.api_base = api_base
@@ -31,10 +31,14 @@ class LiteLLMClient(BaseLM):
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        elif isinstance(prompt, dict):
+            messages = [prompt]
+        elif isinstance(prompt, list):
             messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
@@ -54,11 +58,13 @@ class LiteLLMClient(BaseLM):
         return response.choices[0].message.content
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
     ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        elif isinstance(prompt, dict):
+            messages = [prompt]
+        elif isinstance(prompt, list):
             messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")

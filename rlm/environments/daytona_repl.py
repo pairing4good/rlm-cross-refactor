@@ -502,6 +502,9 @@ class DaytonaREPL(IsolatedEnv):
 
     def _handle_llm_request(self, req_data: dict) -> dict:
         """Handle an LLM request from the sandbox."""
+        if not self.lm_handler_address:
+            return {"error": "No LM handler configured"}
+
         req_type = req_data.get("type")
         model = req_data.get("model")
 
@@ -512,6 +515,9 @@ class DaytonaREPL(IsolatedEnv):
 
             if not response.success:
                 return {"error": response.error}
+
+            if response.chat_completion is None:
+                return {"error": "No response from LM"}
 
             # Track the call
             with self._calls_lock:
@@ -529,10 +535,12 @@ class DaytonaREPL(IsolatedEnv):
             for resp in responses:
                 if not resp.success:
                     results.append(f"Error: {resp.error}")
-                else:
+                elif resp.chat_completion is not None:
                     with self._calls_lock:
                         self.pending_llm_calls.append(resp.chat_completion)
                     results.append(resp.chat_completion.response)
+                else:
+                    results.append("Error: No response from LM")
 
             return {"responses": results}
 

@@ -57,9 +57,9 @@ class ModelUsageSummary:
     @classmethod
     def from_dict(cls, data: dict) -> "ModelUsageSummary":
         return cls(
-            total_calls=data.get("total_calls"),
-            total_input_tokens=data.get("total_input_tokens"),
-            total_output_tokens=data.get("total_output_tokens"),
+            total_calls=data.get("total_calls", 0),
+            total_input_tokens=data.get("total_input_tokens", 0),
+            total_output_tokens=data.get("total_output_tokens", 0),
         )
 
 
@@ -110,11 +110,11 @@ class RLMChatCompletion:
     @classmethod
     def from_dict(cls, data: dict) -> "RLMChatCompletion":
         return cls(
-            root_model=data.get("root_model"),
-            prompt=data.get("prompt"),
-            response=data.get("response"),
-            usage_summary=UsageSummary.from_dict(data.get("usage_summary")),
-            execution_time=data.get("execution_time"),
+            root_model=data.get("root_model", ""),
+            prompt=data.get("prompt", ""),
+            response=data.get("response", ""),
+            usage_summary=UsageSummary.from_dict(data.get("usage_summary", {})),
+            execution_time=data.get("execution_time", 0.0),
         )
 
 
@@ -123,7 +123,7 @@ class REPLResult:
     stdout: str
     stderr: str
     locals: dict
-    execution_time: float
+    execution_time: float | None
     llm_calls: list["RLMChatCompletion"]
 
     def __init__(
@@ -131,8 +131,8 @@ class REPLResult:
         stdout: str,
         stderr: str,
         locals: dict,
-        execution_time: float = None,
-        rlm_calls: list["RLMChatCompletion"] = None,
+        execution_time: float | None = None,
+        rlm_calls: list["RLMChatCompletion"] | None = None,
     ):
         self.stdout = stdout
         self.stderr = stderr
@@ -164,7 +164,7 @@ class CodeBlock:
 
 @dataclass
 class RLMIteration:
-    prompt: str | dict[str, Any]
+    prompt: str | dict[str, Any] | list[dict[str, Any]]
     response: str
     code_blocks: list[CodeBlock]
     final_answer: str | None = None
@@ -250,7 +250,10 @@ class QueryMetadata:
                 self.context_lengths = [0]
             elif isinstance(prompt[0], dict):
                 if "content" in prompt[0]:
-                    self.context_lengths = [len(str(chunk.get("content", ""))) for chunk in prompt]
+                    self.context_lengths = [
+                        len(str(chunk.get("content", ""))) if isinstance(chunk, dict) else 0
+                        for chunk in prompt
+                    ]
                 else:
                     self.context_lengths = []
                     for chunk in prompt:

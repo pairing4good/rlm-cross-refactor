@@ -62,6 +62,9 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         if not response.success:
             return {"error": response.error}
 
+        if response.chat_completion is None:
+            return {"error": "No response from LM"}
+
         with self.lock:
             self.pending_calls.append(response.chat_completion)
 
@@ -80,10 +83,12 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         for resp in responses:
             if not resp.success:
                 results.append(f"Error: {resp.error}")
-            else:
+            elif resp.chat_completion is not None:
                 with self.lock:
                     self.pending_calls.append(resp.chat_completion)
                 results.append(resp.chat_completion.response)
+            else:
+                results.append("Error: No response from LM")
 
         return {"responses": results}
 
@@ -289,6 +294,9 @@ class DockerREPL(NonIsolatedEnv):
             )
 
     def execute_code(self, code: str) -> REPLResult:
+        if not self.container_id:
+            raise RuntimeError("Container not initialized. Call setup() first.")
+
         start = time.perf_counter()
 
         with self._calls_lock:

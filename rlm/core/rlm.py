@@ -1,6 +1,6 @@
 import time
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 from rlm.clients import BaseLM, get_client
 from rlm.core.lm_handler import LMHandler
@@ -126,7 +126,7 @@ class RLM:
                 environment_kwargs=filter_sensitive_keys(environment_kwargs)
                 if environment_kwargs
                 else {},
-                other_backends=other_backends,
+                other_backends=cast(list[str] | None, other_backends),
             )
             if self.logger:
                 self.logger.log_metadata(metadata)
@@ -141,12 +141,14 @@ class RLM:
         When persistent=False (default), creates fresh environment each call.
         """
         # Create client and wrap in handler
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        client: BaseLM = get_client(self.backend, self.backend_kwargs or {})
 
         # Create other_backend_client if provided (for depth=1 routing)
         other_backend_client: BaseLM | None = None
         if self.other_backends and self.other_backend_kwargs:
-            other_backend_client = get_client(self.other_backends[0], self.other_backend_kwargs[0])
+            other_backend_client = get_client(
+                self.other_backends[0], self.other_backend_kwargs[0] or {}
+            )
 
         lm_handler = LMHandler(client, other_backend_client=other_backend_client)
 
@@ -184,8 +186,10 @@ class RLM:
             yield lm_handler, environment
         finally:
             lm_handler.stop()
-            if not self.persistent and hasattr(environment, "cleanup"):
-                environment.cleanup()
+            if not self.persistent:
+                cleanup_fn = getattr(environment, "cleanup", None)
+                if cleanup_fn is not None:
+                    cleanup_fn()
 
     def _setup_prompt(self, prompt: str | dict[str, Any]) -> list[dict[str, Any]]:
         """
@@ -233,7 +237,9 @@ class RLM:
                         # Store message history in persistent environment
                         if self.persistent and isinstance(environment, SupportsPersistence):
                             environment.add_history(message_history)
-                        return self._token_limit_exceeded_answer(i, tokens_used, time_start, lm_handler)
+                        return self._token_limit_exceeded_answer(
+                            i, tokens_used, time_start, lm_handler
+                        )
 
                 # Current prompt = message history + additional prompt suffix
                 context_count = (
@@ -316,7 +322,7 @@ class RLM:
 
     def _completion_turn(
         self,
-        prompt: str | dict[str, Any],
+        prompt: str | dict[str, Any] | list[dict[str, Any]],
         lm_handler: LMHandler,
         environment: BaseEnv,
     ) -> RLMIteration:
@@ -366,13 +372,25 @@ class RLM:
 
         return response
 
-    def _fallback_answer(self, message: str | dict[str, Any]) -> str:
+    def _fallback_answer(self, message: str | dict[str, Any]) -> RLMChatCompletion:
         """
         Fallback behavior if the RLM is actually at max depth, and should be treated as an LM.
         """
-        client: BaseLM = get_client(self.backend, self.backend_kwargs)
+        client: BaseLM = get_client(self.backend, self.backend_kwargs or {})
+        start_time = time.perf_counter()
         response = client.completion(message)
-        return response
+        end_time = time.perf_counter()
+
+        usage = client.get_last_usage()
+        return RLMChatCompletion(
+            root_model=self.backend_kwargs.get("model_name", client.model_name)
+            if self.backend_kwargs
+            else client.model_name,
+            prompt=message,
+            response=response,
+            usage_summary=UsageSummary(model_usage_summaries={client.model_name: usage}),
+            execution_time=end_time - start_time,
+        )
 
     def _calculate_total_tokens(self, usage: UsageSummary) -> int:
         """Calculate total tokens (input + output) from usage summary."""
@@ -392,6 +410,9 @@ class RLM:
         Handle early termination when token limit is exceeded.
         Returns a completion indicating the session ended due to token limit.
         """
+        # Type narrowing: this method is only called when max_tokens is not None
+        assert self.max_tokens is not None
+
         time_end = time.perf_counter()
         usage = lm_handler.get_usage_summary()
 
@@ -456,15 +477,16 @@ class RLM:
             )
 
     @staticmethod
-    def _env_supports_persistence(env: BaseEnv) -> bool:
+    def _env_supports_persistence(env: BaseEnv | SupportsPersistence) -> bool:
         """Check if an environment instance supports persistent mode methods."""
         return isinstance(env, SupportsPersistence)
 
     def close(self) -> None:
         """Clean up persistent environment. Call when done with multi-turn conversations."""
         if self._persistent_env is not None:
-            if hasattr(self._persistent_env, "cleanup"):
-                self._persistent_env.cleanup()
+            cleanup_fn = getattr(self._persistent_env, "cleanup", None)
+            if cleanup_fn is not None:
+                cleanup_fn()
             self._persistent_env = None
 
     def __enter__(self) -> "RLM":

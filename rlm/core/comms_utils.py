@@ -250,7 +250,8 @@ def send_lm_request_batched(
 
         if not response.success:
             # Return error responses for all prompts
-            return [LMResponse.error_response(response.error)] * len(prompts)
+            error_message = response.error or "Unknown error"
+            return [LMResponse.error_response(error_message)] * len(prompts)
 
         if response.chat_completions is None:
             return [LMResponse.error_response("No completions returned")] * len(prompts)

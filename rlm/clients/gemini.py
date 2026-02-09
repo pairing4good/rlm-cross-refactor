@@ -26,7 +26,7 @@ class GeminiClient(BaseLM):
         model_name: str | None = "gemini-2.5-flash",
         **kwargs,
     ):
-        super().__init__(model_name=model_name, **kwargs)
+        super().__init__(model_name=model_name or "gemini-2.5-flash", **kwargs)
 
         if api_key is None:
             api_key = DEFAULT_GEMINI_API_KEY
@@ -49,7 +49,9 @@ class GeminiClient(BaseLM):
         self.last_prompt_tokens = 0
         self.last_completion_tokens = 0
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         contents, system_instruction = self._prepare_contents(prompt)
 
         model = model or self.model_name
@@ -67,10 +69,10 @@ class GeminiClient(BaseLM):
         )
 
         self._track_cost(response, model)
-        return response.text
+        return response.text or ""
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
     ) -> str:
         contents, system_instruction = self._prepare_contents(prompt)
 
@@ -90,36 +92,49 @@ class GeminiClient(BaseLM):
         )
 
         self._track_cost(response, model)
-        return response.text
+        return response.text or ""
 
     def _prepare_contents(
-        self, prompt: str | list[dict[str, Any]]
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]]
     ) -> tuple[list[types.Content] | str, str | None]:
         """Prepare contents and extract system instruction for Gemini API."""
-        system_instruction = None
 
         if isinstance(prompt, str):
             return prompt, None
 
-        if isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
-            # Convert OpenAI-style messages to Gemini format
+        if isinstance(prompt, dict):
+            # Single message dict - wrap in list and process
+            role = prompt.get("role")
+            content = prompt.get("content", "")
+
+            if role == "system":
+                # Gemini handles system instruction separately
+                return [], content
+            elif role == "user":
+                return [types.Content(role="user", parts=[types.Part(text=content)])], None
+            elif role == "assistant":
+                # Gemini uses "model" instead of "assistant"
+                return [types.Content(role="model", parts=[types.Part(text=content)])], None
+            else:
+                # Default to user role for unknown roles
+                return [types.Content(role="user", parts=[types.Part(text=content)])], None
+
+        if isinstance(prompt, list):
+            # List of message dicts - process all
             contents = []
+            system_instruction = None
             for msg in prompt:
                 role = msg.get("role")
                 content = msg.get("content", "")
 
                 if role == "system":
-                    # Gemini handles system instruction separately
                     system_instruction = content
                 elif role == "user":
                     contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
                 elif role == "assistant":
-                    # Gemini uses "model" instead of "assistant"
                     contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
                 else:
-                    # Default to user role for unknown roles
                     contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
-
             return contents, system_instruction
 
         raise ValueError(f"Invalid prompt type: {type(prompt)}")

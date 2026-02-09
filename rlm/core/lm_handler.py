@@ -8,6 +8,7 @@ import asyncio
 import time
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
+from typing import Any
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.comms_utils import LMRequest, LMResponse, socket_recv, socket_send
@@ -60,6 +61,8 @@ class LMRequestHandler(StreamRequestHandler):
 
     def _handle_single(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a single prompt request."""
+        assert request.prompt is not None, "Single request must have non-None prompt"
+
         client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
@@ -81,11 +84,14 @@ class LMRequestHandler(StreamRequestHandler):
 
     def _handle_batched(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a batched prompts request using async for concurrency."""
+        assert request.prompts is not None, "Batched request must have non-None prompts"
+
         client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
 
         async def run_all():
+            assert request.prompts is not None  # Type narrowing for closure
             tasks = [client.acompletion(prompt) for prompt in request.prompts]
             return await asyncio.gather(*tasks)
 
@@ -196,7 +202,9 @@ class LMHandler:
             self._server = None
             self._thread = None
 
-    def completion(self, prompt: str, model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         """Direct completion call (for main process use)."""
         return self.get_client(model).completion(prompt)
 

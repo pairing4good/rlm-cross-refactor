@@ -210,15 +210,18 @@ class LocalREPL(NonIsolatedEnv):
                 return f"Error: {response.error}"
 
             # Track this LLM call
-            self._pending_llm_calls.append(
-                response.chat_completion,
-            )
-
-            return response.chat_completion.response
+            if response.chat_completion is not None:
+                self._pending_llm_calls.append(
+                    response.chat_completion,
+                )
+                return response.chat_completion.response
+            return "Error: No response from LM"
         except Exception as e:
             return f"Error: LM query failed - {e}"
 
-    def _llm_query_batched(self, prompts: list[str], model: str | None = None) -> list[str]:
+    def _llm_query_batched(
+        self, prompts: list[str | dict[str, Any]], model: str | None = None
+    ) -> list[str]:
         """Query the LM with multiple prompts concurrently.
 
         Args:
@@ -240,10 +243,12 @@ class LocalREPL(NonIsolatedEnv):
             for response in responses:
                 if not response.success:
                     results.append(f"Error: {response.error}")
-                else:
+                elif response.chat_completion is not None:
                     # Track this LLM call in list of all calls -- we may want to do this hierarchically
                     self._pending_llm_calls.append(response.chat_completion)
                     results.append(response.chat_completion.response)
+                else:
+                    results.append("Error: No response from LM")
 
             return results
         except Exception as e:

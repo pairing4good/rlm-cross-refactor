@@ -29,7 +29,7 @@ class OpenAIClient(BaseLM):
         base_url: str | None = None,
         **kwargs,
     ):
-        super().__init__(model_name=model_name, **kwargs)
+        super().__init__(model_name=model_name or "gpt-4o", **kwargs)
 
         if api_key is None:
             if base_url == "https://api.openai.com/v1" or base_url is None:
@@ -50,10 +50,14 @@ class OpenAIClient(BaseLM):
         self.model_output_tokens: dict[str, int] = defaultdict(int)
         self.model_total_tokens: dict[str, int] = defaultdict(int)
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        elif isinstance(prompt, dict):
+            messages = [prompt]
+        elif isinstance(prompt, list):
             messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
@@ -70,14 +74,17 @@ class OpenAIClient(BaseLM):
             model=model, messages=messages, extra_body=extra_body
         )
         self._track_cost(response, model)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        return content or ""
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
     ) -> str:
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        elif isinstance(prompt, dict):
+            messages = [prompt]
+        elif isinstance(prompt, list):
             messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
@@ -94,9 +101,10 @@ class OpenAIClient(BaseLM):
             model=model, messages=messages, extra_body=extra_body
         )
         self._track_cost(response, model)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        return content or ""
 
-    def _track_cost(self, response: openai.ChatCompletion, model: str):
+    def _track_cost(self, response: Any, model: str):
         self.model_call_counts[model] += 1
 
         usage = getattr(response, "usage", None)

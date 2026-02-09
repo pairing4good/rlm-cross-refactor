@@ -152,6 +152,7 @@ class VerbosePrinter:
         """Print RLM metadata as header."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         model = metadata.backend_kwargs.get("model_name", "unknown")
         other = list(metadata.other_backends) if metadata.other_backends else None
@@ -169,6 +170,7 @@ class VerbosePrinter:
         """Print the start of a new iteration."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         self._iteration_count = iteration
 
@@ -183,7 +185,7 @@ class VerbosePrinter:
         """Print a completion response."""
         if not self.enabled:
             return
-
+        assert self.console is not None
         # Header with timing
         header = Text()
         header.append("◇ ", style=STYLE_ACCENT)
@@ -212,7 +214,7 @@ class VerbosePrinter:
         """Print code execution details."""
         if not self.enabled:
             return
-
+        assert self.console is not None
         result = code_block.result
 
         # Header
@@ -272,6 +274,7 @@ class VerbosePrinter:
         """Print a sub-call to another model."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         # Header
         header = Text()
@@ -304,6 +307,7 @@ class VerbosePrinter:
         """
         if not self.enabled:
             return
+        assert self.console is not None
 
         # Print iteration header
         self.print_iteration_start(iteration_num)
@@ -328,6 +332,7 @@ class VerbosePrinter:
         """Print the final answer."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         # Title
         title = Text()
@@ -359,6 +364,7 @@ class VerbosePrinter:
         """Print a summary at the end of execution."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         # Summary table
         summary_table = Table(
@@ -397,12 +403,11 @@ class VerbosePrinter:
         self.console.print(Rule(style=COLORS["border"], characters="═"))
         self.console.print()
 
-    def print_token_limit_hit(
-        self, max_tokens: int, tokens_used: int, iteration: int
-    ) -> None:
+    def print_token_limit_hit(self, max_tokens: int, tokens_used: int, iteration: int) -> None:
         """Print a warning when token limit is exceeded."""
         if not self.enabled:
             return
+        assert self.console is not None
 
         # Title
         title = Text()
@@ -411,9 +416,9 @@ class VerbosePrinter:
 
         # Content
         content = Text()
-        content.append(f"Maximum tokens: ", style=STYLE_TEXT)
+        content.append("Maximum tokens: ", style=STYLE_TEXT)
         content.append(f"{max_tokens:,}\n", style=STYLE_ACCENT)
-        content.append(f"Tokens used: ", style=STYLE_TEXT)
+        content.append("Tokens used: ", style=STYLE_TEXT)
         content.append(f"{tokens_used:,}\n\n", style=STYLE_WARNING)
         content.append(
             f"Session ended after {iteration} iteration(s).\n",

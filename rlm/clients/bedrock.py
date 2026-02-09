@@ -79,7 +79,9 @@ class BedrockClient(BaseLM):
         self.last_prompt_tokens = 0
         self.last_completion_tokens = 0
 
-    def completion(self, prompt: str | list[dict[str, Any]], model: str | None = None) -> str:
+    def completion(
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
+    ) -> str:
         """Synchronous completion using Bedrock Converse API."""
         messages, system = self._prepare_messages(prompt)
 
@@ -112,7 +114,7 @@ class BedrockClient(BaseLM):
         return response["output"]["message"]["content"][0]["text"]
 
     async def acompletion(
-        self, prompt: str | list[dict[str, Any]], model: str | None = None
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]], model: str | None = None
     ) -> str:
         """
         Async completion using Bedrock Converse API.
@@ -125,7 +127,7 @@ class BedrockClient(BaseLM):
         return self.completion(prompt, model)
 
     def _prepare_messages(
-        self, prompt: str | list[dict[str, Any]]
+        self, prompt: str | dict[str, Any] | list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], str | None]:
         """
         Prepare messages for Bedrock Converse API.
@@ -138,7 +140,18 @@ class BedrockClient(BaseLM):
         if isinstance(prompt, str):
             # Simple string prompt
             messages = [{"role": "user", "content": [{"text": prompt}]}]
-        elif isinstance(prompt, list) and all(isinstance(item, dict) for item in prompt):
+        elif isinstance(prompt, dict):
+            # Single message dict
+            role = prompt.get("role")
+            content = prompt.get("content", "")
+            if role == "system":
+                system = content
+                messages = []
+            elif role in ("user", "assistant"):
+                messages = [{"role": role, "content": [{"text": content}]}]
+            else:
+                raise ValueError(f"Unsupported role: {role}")
+        elif isinstance(prompt, list):
             # Message list format
             messages = []
             for msg in prompt:
