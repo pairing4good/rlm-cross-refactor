@@ -13,7 +13,7 @@ logger = RLMLogger(log_dir="./logs")
 rlm = RLM(
     backend="bedrock",
     backend_kwargs={
-        "model_name": "us.us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "region_name": "us-east-1",
         "max_tokens": 8192,
     },
