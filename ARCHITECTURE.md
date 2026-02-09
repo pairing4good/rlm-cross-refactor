@@ -448,6 +448,7 @@ class BaseLM:
 **Supported Clients:**
 - `OpenAIClient` - OpenAI API (+ vLLM with OpenAI-compatible endpoint)
 - `AnthropicClient` - Anthropic API (Claude models)
+- `BedrockClient` - AWS Bedrock (Claude, Llama, Mistral, Titan via Converse API)
 - `GeminiClient` - Google Gemini API
 - `AzureOpenAIClient` - Azure OpenAI Service
 - `LiteLLMClient` - LiteLLM router (100+ models)
@@ -464,6 +465,64 @@ Each client maintains:
     }
 }
 ```
+
+#### BedrockClient Details
+
+**AWS Bedrock** provides access to foundation models via a unified API. The `BedrockClient` uses the Converse API for model-agnostic inference.
+
+**Supported Models:**
+- **Anthropic Claude**: `us.anthropic.claude-3-5-sonnet-20241022-v2:0`, `anthropic.claude-3-5-haiku-20241022-v1:0`
+- **Meta Llama**: `meta.llama3-70b-instruct-v1:0`, `meta.llama3-8b-instruct-v1:0`
+- **Mistral AI**: `mistral.mistral-large-2402-v1:0`, `mistral.mixtral-8x7b-instruct-v0:1`
+- **Amazon Titan**: `amazon.titan-text-express-v1`, `amazon.titan-text-lite-v1`
+
+**Authentication Methods:**
+1. **IAM Role** (recommended for EC2/Lambda): Automatic credential detection
+2. **AWS CLI**: Uses credentials from `~/.aws/credentials`
+3. **Environment Variables**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
+4. **Explicit Parameters**: Pass credentials directly to `BedrockClient`
+
+**Configuration:**
+```python
+from rlm import RLM
+from rlm.clients import BedrockClient
+
+# Method 1: IAM role or AWS CLI (recommended)
+rlm = RLM(
+    backend="bedrock",
+    backend_kwargs={
+        "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "region_name": "us-east-1",
+        "max_tokens": 32768,
+        "temperature": 1.0,
+        "top_p": 0.999,
+    }
+)
+
+# Method 2: Explicit credentials
+import os
+rlm = RLM(
+    backend="bedrock",
+    backend_kwargs={
+        "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "region_name": "us-east-1",
+        "aws_access_key_id": os.environ["AWS_ACCESS_KEY_ID"],
+        "aws_secret_access_key": os.environ["AWS_SECRET_ACCESS_KEY"],
+        "max_tokens": 32768,
+    }
+)
+```
+
+**Advantages:**
+- **Cost Savings**: Often 20-50% cheaper than direct API access for same models
+- **Unified API**: Access multiple model providers through single interface
+- **Enterprise Features**: AWS IAM integration, CloudWatch logging, VPC support
+- **No API Key Management**: Uses AWS credentials instead of model-specific API keys
+
+**Requirements:**
+- `boto3 >= 1.34.0` (Converse API support)
+- AWS account with Bedrock access enabled
+- Model access granted in AWS Bedrock console (per-region, per-model)
 
 ---
 
@@ -814,37 +873,107 @@ REPL Code Execution
 
 ### Adding a New LM Client
 
+**Reference Implementation**: See [rlm/clients/bedrock.py](rlm/clients/bedrock.py) for a complete example.
+
 1. **Inherit from BaseLM:**
    ```python
    from rlm.clients.base_lm import BaseLM
+   from rlm.core.types import ModelUsageSummary, UsageSummary
+   from collections import defaultdict
    
    class MyClient(BaseLM):
        def __init__(self, api_key: str, model_name: str, **kwargs):
            super().__init__(model_name=model_name, **kwargs)
-           # Initialize client
+           # Initialize client (e.g., SDK, HTTP client)
+           self.client = SomeSDK(api_key=api_key)
+           
+           # Track usage per model
+           self.model_call_counts: dict[str, int] = defaultdict(int)
+           self.model_input_tokens: dict[str, int] = defaultdict(int)
+           self.model_output_tokens: dict[str, int] = defaultdict(int)
            
        def completion(self, prompt: str | dict) -> str:
-           # Implement sync completion
+           # Convert prompt format if needed
+           messages = self._prepare_messages(prompt)
+           
+           # Make API call
+           response = self.client.create_completion(messages=messages)
+           
+           # Track usage
+           self._track_usage(response)
+           
+           # Return text response
+           return response.text
            
        async def acompletion(self, prompt: str | dict) -> str:
-           # Implement async completion
+           # Implement async (or wrap sync if SDK doesn't support async)
+           return self.completion(prompt)
            
        def get_usage_summary(self) -> UsageSummary:
-           # Return aggregated usage
+           # Return aggregated usage across all models
+           model_summaries = {}
+           for model in self.model_call_counts:
+               model_summaries[model] = ModelUsageSummary(
+                   total_calls=self.model_call_counts[model],
+                   total_input_tokens=self.model_input_tokens[model],
+                   total_output_tokens=self.model_output_tokens[model],
+               )
+           return UsageSummary(model_usage_summaries=model_summaries)
            
        def get_last_usage(self) -> ModelUsageSummary:
            # Return last call usage
+           return ModelUsageSummary(
+               total_calls=1,
+               total_input_tokens=self.last_prompt_tokens,
+               total_output_tokens=self.last_completion_tokens,
+           )
+       
+       def _prepare_messages(self, prompt: str | dict) -> list:
+           # Convert RLM message format to your API's format
+           if isinstance(prompt, str):
+               return [{"role": "user", "content": prompt}]
+           # Handle message list format...
+           
+       def _track_usage(self, response):
+           # Extract and track token usage from response
+           self.model_call_counts[model] += 1
+           self.model_input_tokens[model] += response.input_tokens
+           # ...
    ```
 
-2. **Register in `rlm/clients/__init__.py`:**
+2. **Add to ClientBackend type in `rlm/core/types.py`:**
+   ```python
+   ClientBackend = Literal[
+       "openai",
+       # ... existing backends
+       "my_client",  # NEW
+   ]
+   ```
+
+3. **Register in `rlm/clients/__init__.py`:**
    ```python
    def get_client(backend: ClientBackend, kwargs: dict) -> BaseLM:
        if backend == "my_client":
+           from rlm.clients.my_client import MyClient
            return MyClient(**kwargs)
        # ...
+       else:
+           raise ValueError(
+               f"Unknown backend: {backend}. Supported backends: "
+               f"['openai', ..., 'my_client']"
+           )
    ```
 
-3. **Track usage** - Call `_track_cost()` or similar in completions
+4. **Create example in `examples/my_client_example.py`**
+
+5. **Update documentation** - Add to README.md and ARCHITECTURE.md
+
+**Key Principles** (from AGENTS.md):
+- Use `defaultdict` for usage tracking (see `BedrockClient` pattern)
+- Support both `str` and `list[dict]` prompt formats
+- Extract system messages if your API handles them separately
+- No defensive programming - fail fast with clear error messages
+- Minimal dependencies - use optional extras if needed: `pip install -e ".[my_client]"`
 
 ---
 
