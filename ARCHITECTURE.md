@@ -179,7 +179,7 @@ RLM
 **Configuration:**
 ```python
 RLM(
-    backend="openai",                    # LM client to use
+    backend="openai",                    # LM client to use (root model at depth=0)
     backend_kwargs={"model_name": "..."},
     environment="local",                 # REPL type
     environment_kwargs={},
@@ -187,13 +187,41 @@ RLM(
     max_depth=1,                        # Recursion limit
     max_iterations=30,                  # Iteration limit
     custom_system_prompt=None,          # Override default prompt
-    other_backends=["openai"],          # Additional clients for sub-calls
-    other_backend_kwargs=[{...}],
+    other_backends=["openai"],          # Sub-model clients for depth-based routing
+    other_backend_kwargs=[{...}],       # Config for sub-models (currently supports 1)
     logger=None,                        # RLMLogger instance
     verbose=False,                      # Pretty console output
     persistent=False                    # Multi-turn conversations
 )
 ```
+
+**Multi-Tier Routing (`other_backends`):**
+
+The `other_backends` parameter enables cost optimization by routing sub-queries (made via `llm_query()`) to different, typically cheaper models:
+
+- **Root model (depth=0)**: Uses `backend` + `backend_kwargs` for main reasoning
+- **Sub-model (depth=1)**: Uses `other_backends[0]` + `other_backend_kwargs[0]` for `llm_query()` calls
+
+**Example - Cost-Optimized Configuration:**
+```python
+rlm = RLM(
+    # Powerful model for strategic planning
+    backend="anthropic",
+    backend_kwargs={"model_name": "claude-3-5-sonnet-20241022"},
+    
+    # Cost-effective model for execution tasks
+    other_backends=["anthropic"],
+    other_backend_kwargs=[{"model_name": "claude-3-haiku-20240307"}],
+)
+# Sonnet plans, Haiku executes → 10x cost reduction on sub-queries!
+```
+
+**When sub-model is used:**
+- When generated code calls `llm_query(prompt)` at depth=0
+- These calls are routed to depth=1 (the sub-model)
+- Useful for: batch processing, extraction, validation, simple transformations
+
+**Note:** Currently limited to 1 sub-model. Future versions will support multiple tiers.
 
 ---
 
@@ -239,15 +267,61 @@ LMHandler
 }
 ```
 
-**Client Selection Logic:**
-1. If `model` specified → use registered client for that model
-2. If `depth == 1` and `other_backend_client` exists → use other backend
-3. Else → use default client
+**Client Selection Logic (Multi-Tier Routing):**
+
+The handler routes requests to different LM clients based on explicit model name or depth:
+
+1. **Explicit model name** → use registered client for that model (highest priority)
+2. **Depth-based routing** → if `depth == 1` and `other_backend_client` exists → use sub-model
+3. **Fallback** → use default (root) client
+
+**Example Routing Flow:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Root RLM (depth=0)                                      │
+│ Model: Claude Sonnet ($3/M in, $15/M out)              │
+│                                                         │
+│ Generates code:                                         │
+│   results = []                                          │
+│   for item in data:                                     │
+│       # This llm_query() triggers depth=1 routing       │
+│       summary = llm_query(f"Summarize: {item}")         │
+│       results.append(summary)                           │
+└────────────────────┬────────────────────────────────────┘
+                     │ llm_query() at depth=0
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ LM Handler                                              │
+│ Receives: {"prompt": "Summarize: ...", "depth": 1}     │
+│                                                         │
+│ Routing decision:                                       │
+│   • depth=1 detected                                    │
+│   • other_backend_client exists                         │
+│   → Route to sub-model (Claude Haiku)                   │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ Sub-Model (depth=1)                                     │
+│ Model: Claude Haiku ($0.25/M in, $1.25/M out)          │
+│                                                         │
+│ Processes simple extraction/summarization               │
+│ Returns result to root RLM                              │
+│                                                         │
+│ Cost: ~90% cheaper for sub-queries!                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Cost Optimization Strategy:**
+- Root model: Use powerful model (Sonnet, GPT-4o) for planning/reasoning
+- Sub-model: Use cost-effective model (Haiku, GPT-4o-mini) for execution
+- Savings: 10-20x reduction on sub-query costs
 
 **Key Methods:**
 - `start()` - Spawn server thread
 - `stop()` - Shutdown server
 - `register_client(model_name, client)` - Add client to registry
+- `get_client(model, depth)` - Route requests to appropriate client
 - `get_client(model, depth)` - Resolve which client to use
 - `completion(prompt)` - Direct completion call (used by RLM for root queries)
 - `get_usage_summary()` - Aggregate usage across all clients

@@ -155,6 +155,73 @@ rlm = RLM(
 )
 ```
 
+## Multi-Tier Model Routing for Cost Optimization
+
+RLM supports **multi-tier routing** where you can configure a powerful root model for high-level reasoning and delegate simpler execution tasks to more cost-effective sub-models. This can reduce costs by **10-20x** for tasks involving many sub-queries.
+
+### How It Works
+
+When the root model generates code containing `llm_query()` calls, those sub-queries are automatically routed to your configured sub-model (at depth=1):
+
+```python
+from rlm import RLM
+
+rlm = RLM(
+    # Root model (depth=0): Handles main reasoning and planning
+    backend="anthropic",
+    backend_kwargs={"model_name": "claude-3-5-sonnet-20241022"},
+    
+    # Sub-model (depth=1): Handles llm_query() calls
+    other_backends=["anthropic"],
+    other_backend_kwargs=[{"model_name": "claude-3-haiku-20240307"}],
+)
+
+# The root model (Sonnet) will plan the approach
+# Any llm_query() calls will automatically use the sub-model (Haiku)
+result = rlm.completion("""
+Analyze this dataset by processing each item:
+1. Extract key fields from each record
+2. Summarize findings
+""")
+```
+
+### Cost Comparison: Sonnet vs Haiku
+
+| Model | Input Cost | Output Cost | Use Case |
+|-------|-----------|------------|----------|
+| Claude 3.5 Sonnet | $3/M tokens | $15/M tokens | Complex reasoning, planning |
+| Claude 3 Haiku | $0.25/M tokens | $1.25/M tokens | Simple extraction, formatting |
+
+**Savings Example:**
+- Root model makes 1 planning call (Sonnet): ~10K tokens = $0.15
+- Sub-model makes 100 extraction calls (Haiku): ~500K tokens = $0.75
+- **Total: $0.90** vs **$9.00 all-Sonnet** (90% savings!)
+
+### Recommended Model Pairs by Provider
+
+| Provider | Root Model | Sub-Model | Cost Ratio |
+|----------|-----------|-----------|-----------|
+| **Anthropic** | `claude-3-5-sonnet-20241022` | `claude-3-haiku-20240307` | 10x cheaper |
+| **OpenAI** | `gpt-4o` | `gpt-4o-mini` | 20x cheaper |
+| **Bedrock** | `us.anthropic.claude-sonnet-4-*` | `anthropic.claude-3-5-haiku-*` | 10x cheaper + volume discounts |
+| **Gemini** | `gemini-2.0-pro` | `gemini-2.5-flash` | 5-10x cheaper |
+| **Azure OpenAI** | `gpt-4o` | `gpt-4o-mini` | 20x cheaper |
+
+### When to Use Multi-Tier Routing
+
+✅ **Good use cases:**
+- Processing large datasets with many sub-queries
+- Extract-transform-load (ETL) operations
+- Batch processing with simple per-item operations
+- Analysis requiring many lookups/validations
+
+❌ **Not needed for:**
+- Single-shot completions without sub-queries
+- Tasks where every step requires advanced reasoning
+- Small-scale processing (<10 sub-queries)
+
+See [examples/multi_tier_anthropic.py](examples/multi_tier_anthropic.py) for a complete working example.
+
 ## Relevant Reading
 * **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
 * **[Oct '25]** [Recursive Language Models Blogpost](https://alexzhang13.github.io/blog/2025/rlm/)

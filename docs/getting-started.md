@@ -116,6 +116,59 @@ When your session hits the token limit:
 
 ---
 
+## Multi-Tier Routing for Cost Optimization
+
+{: .highlight }
+> **💰 Reduce costs by 10-20x** by using cheaper models for sub-queries while keeping powerful models for planning.
+
+RLM supports **multi-tier routing** where you configure different models at different depths:
+- **Root model (depth=0)**: Handles main reasoning and planning
+- **Sub-model (depth=1)**: Handles `llm_query()` calls automatically
+
+### Quick Example
+
+```python
+from rlm import RLM
+
+rlm = RLM(
+    # Root model: Powerful reasoning
+    backend="anthropic",
+    backend_kwargs={"model_name": "claude-3-5-sonnet-20241022"},
+    
+    # Sub-model: Cost-effective execution
+    other_backends=["anthropic"],
+    other_backend_kwargs=[{"model_name": "claude-3-haiku-20240307"}],
+)
+
+# The root model (Sonnet) plans the approach
+# Any llm_query() calls automatically use the sub-model (Haiku)
+result = rlm.completion("Process 100 customer records and extract key fields")
+```
+
+### Cost Breakdown
+
+| Scenario | Root Model | Sub-Queries | Total Cost | Savings |
+|:---------|:-----------|:------------|:-----------|:--------|
+| **Single-tier** (all Sonnet) | Sonnet | Sonnet (100×) | ~$9.00 | - |
+| **Multi-tier** (Sonnet + Haiku) | Sonnet | Haiku (100×) | ~$0.90 | **90%** |
+
+### When to Use Multi-Tier
+
+✅ **Use multi-tier when:**
+- Processing many records with sub-queries
+- Extracting/transforming data in batches
+- Simple operations repeated many times
+- Budget is a concern
+
+❌ **Single-tier is fine for:**
+- One-shot completions
+- Every step needs advanced reasoning
+- Fewer than 10 sub-queries
+
+See the full guide in [README: Multi-Tier Model Routing](../README.md#multi-tier-model-routing-for-cost-optimization) and [examples/multi_tier_anthropic.py](../examples/multi_tier_anthropic.py).
+
+---
+
 ## Your First RLM Call
 
 ### Step 1: Set Up API Keys
