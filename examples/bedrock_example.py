@@ -15,10 +15,9 @@ rlm = RLM(
     backend_kwargs={
         "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "region_name": "us-east-1",
-        "max_tokens": 8192,
     },
-    environment="docker",
-    environment_kwargs={},
+    environment="local",
+    max_root_tokens=80000,  # Session-wide cumulative limit
     max_depth=1,
     logger=logger,
     verbose=True,

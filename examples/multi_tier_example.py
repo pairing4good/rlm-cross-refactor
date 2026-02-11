@@ -31,8 +31,8 @@ rlm = RLM(
     backend_kwargs={
         "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "region_name": "us-east-1",
-        "max_tokens": 8192,
     },
+    max_root_tokens=8000,  # Session-wide limit for root agent
     # Sub-model (depth=1): Claude Haiku for simple execution tasks
     # Any llm_query() calls in generated code will automatically use Haiku
     other_backends=["bedrock"],
@@ -40,9 +40,9 @@ rlm = RLM(
         {
             "model_name": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
             "region_name": "us-east-1",
-            "max_tokens": 4096,
         }
     ],
+    max_sub_tokens=3000,  # Session-wide limit for sub-agents
     environment="local",
     logger=logger,
     verbose=True,

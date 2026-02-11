@@ -159,6 +159,11 @@ class LocalREPL(NonIsolatedEnv):
         # Track LLM calls made during code execution
         self._pending_llm_calls: list[RLMChatCompletion] = []
 
+        # Track token limit exceeded status
+        self._token_limit_exceeded: bool = False
+        self._limit_type: str | None = None
+        self._limit_details: dict | None = None
+
         # Add helper functions
         self.globals["FINAL_VAR"] = self._final_var
         self.globals["SHOW_VARS"] = self._show_vars
@@ -207,6 +212,17 @@ class LocalREPL(NonIsolatedEnv):
             response = send_lm_request(self.lm_handler_address, request)
 
             if not response.success:
+                # Check if this is a token limit error
+                if response.error and response.error.startswith("TOKEN_LIMIT_EXCEEDED:"):
+                    parts = response.error.split(":")
+                    if len(parts) == 4:
+                        # Format: TOKEN_LIMIT_EXCEEDED:limit_type:tokens_used:limit_value
+                        self._token_limit_exceeded = True
+                        self._limit_type = parts[1]
+                        self._limit_details = {
+                            "tokens_used": int(parts[2]),
+                            "max_tokens": int(parts[3]),
+                        }
                 return f"Error: {response.error}"
 
             # Track this LLM call
@@ -362,8 +378,11 @@ class LocalREPL(NonIsolatedEnv):
         """Execute code in the persistent namespace and return result."""
         start_time = time.perf_counter()
 
-        # Clear pending LLM calls from previous execution
+        # Clear pending LLM calls and token limit flags from previous execution
         self._pending_llm_calls = []
+        self._token_limit_exceeded = False
+        self._limit_type = None
+        self._limit_details = None
 
         with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
             try:
@@ -387,6 +406,9 @@ class LocalREPL(NonIsolatedEnv):
             locals=self.locals.copy(),
             execution_time=time.perf_counter() - start_time,
             rlm_calls=self._pending_llm_calls.copy(),
+            token_limit_exceeded=self._token_limit_exceeded,
+            limit_type=self._limit_type,
+            limit_details=self._limit_details,
         )
 
     def __enter__(self):

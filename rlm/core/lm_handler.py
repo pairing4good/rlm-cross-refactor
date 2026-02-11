@@ -63,6 +63,11 @@ class LMRequestHandler(StreamRequestHandler):
         """Handle a single prompt request."""
         assert request.prompt is not None, "Single request must have non-None prompt"
 
+        # Check token limits before processing
+        limit_check = handler._check_token_limits(request.depth)
+        if limit_check is not None:
+            return limit_check
+
         client = handler.get_client(request.model, request.depth)
 
         start_time = time.perf_counter()
@@ -85,6 +90,11 @@ class LMRequestHandler(StreamRequestHandler):
     def _handle_batched(self, request: LMRequest, handler: "LMHandler") -> LMResponse:
         """Handle a batched prompts request using async for concurrency."""
         assert request.prompts is not None, "Batched request must have non-None prompts"
+
+        # Check token limits before processing
+        limit_check = handler._check_token_limits(request.depth)
+        if limit_check is not None:
+            return limit_check
 
         client = handler.get_client(request.model, request.depth)
 
@@ -138,14 +148,21 @@ class LMHandler:
         host: str = "127.0.0.1",
         port: int = 0,  # auto-assign available port
         other_backend_client: BaseLM | None = None,
+        max_root_tokens: int | None = None,
+        max_sub_tokens: int | None = None,
     ):
         self.default_client = client
         self.other_backend_client = other_backend_client
         self.clients: dict[str, BaseLM] = {}
+        self.max_root_tokens = max_root_tokens
+        self.max_sub_tokens = max_sub_tokens
         self.host = host
         self._server: ThreadingLMServer | None = None
         self._thread: Thread | None = None
         self._port = port
+
+        # Track which depths use which clients for accurate token attribution
+        self._depth_client_mapping: dict[int, set[str]] = {0: set(), 1: set()}
 
         self.register_client(client.model_name, client)
 
@@ -231,3 +248,61 @@ class LMHandler:
             client_summary = client.get_usage_summary()
             merged.update(client_summary.model_usage_summaries)
         return UsageSummary(model_usage_summaries=merged)
+
+    def get_depth_specific_usage(self) -> tuple[int, int]:
+        """Get separate token counts for root (depth=0) and sub-agent (depth=1) calls.
+
+        Returns:
+            tuple[int, int]: (root_tokens, sub_tokens) where each is total input + output tokens
+        """
+        root_tokens = 0
+        sub_tokens = 0
+
+        # Default client is always used for root calls (depth=0)
+        default_usage = self.default_client.get_usage_summary()
+        for model_usage in default_usage.model_usage_summaries.values():
+            root_tokens += model_usage.total_input_tokens + model_usage.total_output_tokens
+
+        # Other backend client is used for sub-agent calls (depth=1)
+        if self.other_backend_client is not None:
+            other_usage = self.other_backend_client.get_usage_summary()
+            for model_usage in other_usage.model_usage_summaries.values():
+                sub_tokens += model_usage.total_input_tokens + model_usage.total_output_tokens
+
+        return root_tokens, sub_tokens
+
+    def _check_token_limits(self, depth: int) -> LMResponse | None:
+        """Check if token limits have been exceeded for the given depth.
+
+        Uses conservative estimation: blocks call if current usage + buffer would exceed limit.
+        This prevents the first call from happening when limits are too low.
+
+        Args:
+            depth: The depth of the request (0=root, 1=sub-agent)
+
+        Returns:
+            LMResponse with error if limit exceeded, None if within limits
+        """
+        root_tokens, sub_tokens = self.get_depth_specific_usage()
+
+        # Conservative buffer: typical minimum tokens per LM call
+        # (small prompt + small response = ~50-100 tokens minimum)
+        CONSERVATIVE_BUFFER = 50
+
+        # Check root limit for depth=0 calls
+        if depth == 0 and self.max_root_tokens is not None:
+            # Block if current usage + buffer would exceed limit
+            if root_tokens + CONSERVATIVE_BUFFER >= self.max_root_tokens:
+                return LMResponse.error_response(
+                    f"TOKEN_LIMIT_EXCEEDED:root:{root_tokens}:{self.max_root_tokens}"
+                )
+
+        # Check sub-agent limit for depth=1 calls
+        if depth == 1 and self.max_sub_tokens is not None:
+            # Block if current usage + buffer would exceed limit
+            if sub_tokens + CONSERVATIVE_BUFFER >= self.max_sub_tokens:
+                return LMResponse.error_response(
+                    f"TOKEN_LIMIT_EXCEEDED:sub_agent:{sub_tokens}:{self.max_sub_tokens}"
+                )
+
+        return None

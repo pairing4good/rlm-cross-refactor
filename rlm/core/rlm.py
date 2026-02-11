@@ -47,7 +47,8 @@ class RLM:
         depth: int = 0,
         max_depth: int = 1,
         max_iterations: int = 30,
-        max_tokens: int | None = 1_000_000,
+        max_root_tokens: int | None = 1_000_000,
+        max_sub_tokens: int | None = 1_000_000,
         custom_system_prompt: str | None = None,
         other_backends: list[ClientBackend] | None = None,
         other_backend_kwargs: list[dict[str, Any]] | None = None,
@@ -58,25 +59,37 @@ class RLM:
         """
         Args:
             backend: The backend to use for the RLM.
-            backend_kwargs: The kwargs to pass to the backend.
+            backend_kwargs: The kwargs to pass to the backend. Should NOT include token limits -
+                use max_root_tokens/max_sub_tokens constructor params for session-wide limits.
             environment: The environment to use for the RLM.
             environment_kwargs: The kwargs to pass to the environment.
             depth: The current depth of the RLM (0-indexed).
             max_depth: The maximum depth of the RLM. Currently, only depth 1 is supported.
             max_iterations: The maximum number of iterations of the RLM.
-            max_tokens: The maximum total tokens (input + output) allowed per completion() session.
+            max_root_tokens: The maximum total tokens (input + output) allowed for root agent calls (depth=0).
                 DEFAULT: 1,000,000 tokens to prevent unexpectedly large API bills.
                 COST ESTIMATE: 1M tokens costs ~$1-45 depending on your model:
                   - GPT-3.5 Turbo: ~$1  |  GPT-4o: ~$6  |  GPT-4 Turbo: ~$20  |  Claude Opus: ~$45
                 Set to None for unlimited tokens (use with caution - can result in expensive bills).
                 Set to a smaller value (e.g., 100_000) for tighter budget control.
+            max_sub_tokens: The maximum total tokens (input + output) allowed for sub-agent calls (depth=1).
+                This limits the cumulative tokens used by llm_query() calls within generated code.
+                DEFAULT: 1,000,000 tokens. Set to None for unlimited sub-agent tokens.
             custom_system_prompt: The custom system prompt to use for the RLM.
             other_backends: A list of other client backends that the environments can use to make sub-calls.
             other_backend_kwargs: The kwargs to pass to the other client backends (ordered to match other_backends).
+                Should NOT include token limits - use max_sub_tokens constructor param for session-wide limits.
             logger: The logger to use for the RLM.
             verbose: Whether to print verbose output in rich to console.
             persistent: If True, reuse the environment across completion() calls for multi-turn conversations.
         """
+        # Validate backend_kwargs for problematic token limit settings
+        if backend_kwargs:
+            self._validate_backend_kwargs(backend_kwargs, "backend_kwargs (root)")
+        if other_backend_kwargs:
+            for i, kwargs in enumerate(other_backend_kwargs):
+                self._validate_backend_kwargs(kwargs, f"other_backend_kwargs[{i}] (sub)")
+
         # Store config for spawning per-completion
         self.backend = backend
         self.backend_kwargs = backend_kwargs
@@ -98,7 +111,8 @@ class RLM:
         self.depth = depth
         self.max_depth = max_depth
         self.max_iterations = max_iterations
-        self.max_tokens = max_tokens
+        self.max_root_tokens = max_root_tokens
+        self.max_sub_tokens = max_sub_tokens
         self.system_prompt = custom_system_prompt if custom_system_prompt else RLM_SYSTEM_PROMPT
         self.logger = logger
         self.verbose = VerbosePrinter(enabled=verbose)
@@ -119,7 +133,8 @@ class RLM:
                 else "unknown",
                 max_depth=max_depth,
                 max_iterations=max_iterations,
-                max_tokens=max_tokens,
+                max_root_tokens=max_root_tokens,
+                max_sub_tokens=max_sub_tokens,
                 backend=backend,
                 backend_kwargs=filter_sensitive_keys(backend_kwargs) if backend_kwargs else {},
                 environment_type=environment,
@@ -150,7 +165,12 @@ class RLM:
                 self.other_backends[0], self.other_backend_kwargs[0] or {}
             )
 
-        lm_handler = LMHandler(client, other_backend_client=other_backend_client)
+        lm_handler = LMHandler(
+            client,
+            other_backend_client=other_backend_client,
+            max_root_tokens=self.max_root_tokens,
+            max_sub_tokens=self.max_sub_tokens,
+        )
 
         # Register other clients to be available as sub-call options (by model name)
         if self.other_backends and self.other_backend_kwargs:
@@ -228,17 +248,39 @@ class RLM:
         with self._spawn_completion_context(prompt) as (lm_handler, environment):
             message_history = self._setup_prompt(prompt)
 
+            # Pre-flight check: Validate limits aren't absurdly low
+            # A single LM call typically uses 50-200+ tokens minimum
+            MIN_VIABLE_TOKENS = 50
+            if self.max_root_tokens is not None and self.max_root_tokens < MIN_VIABLE_TOKENS:
+                # Immediately fail - limit too low for even one call
+                return self._token_limit_exceeded_answer(
+                    0, 0, time_start, lm_handler, limit_type="root"
+                )
+            if self.max_sub_tokens is not None and self.max_sub_tokens < MIN_VIABLE_TOKENS:
+                # Immediately fail - limit too low for even one call
+                return self._token_limit_exceeded_answer(
+                    0, 0, time_start, lm_handler, limit_type="sub_agent"
+                )
+
             for i in range(self.max_iterations):
-                # Check token limit before starting next iteration
-                if self.max_tokens is not None:
-                    current_usage = lm_handler.get_usage_summary()
-                    tokens_used = self._calculate_total_tokens(current_usage)
-                    if tokens_used >= self.max_tokens:
-                        # Store message history in persistent environment
+                # Check token limits before starting next iteration
+                if self.max_root_tokens is not None or self.max_sub_tokens is not None:
+                    root_tokens, sub_tokens = lm_handler.get_depth_specific_usage()
+
+                    # Check root token limit
+                    if self.max_root_tokens is not None and root_tokens >= self.max_root_tokens:
                         if self.persistent and isinstance(environment, SupportsPersistence):
                             environment.add_history(message_history)
                         return self._token_limit_exceeded_answer(
-                            i, tokens_used, time_start, lm_handler
+                            i, root_tokens, time_start, lm_handler, limit_type="root"
+                        )
+
+                    # Check sub-agent token limit
+                    if self.max_sub_tokens is not None and sub_tokens >= self.max_sub_tokens:
+                        if self.persistent and isinstance(environment, SupportsPersistence):
+                            environment.add_history(message_history)
+                        return self._token_limit_exceeded_answer(
+                            i, sub_tokens, time_start, lm_handler, limit_type="sub_agent"
                         )
 
                 # Current prompt = message history + additional prompt suffix
@@ -261,6 +303,23 @@ class RLM:
                     lm_handler=lm_handler,
                     environment=environment,
                 )
+
+                # Check if any code block hit a token limit during execution
+                for code_block in iteration.code_blocks:
+                    if code_block.result.token_limit_exceeded:
+                        # Token limit hit during sub-agent call - terminate immediately
+                        if self.persistent and isinstance(environment, SupportsPersistence):
+                            environment.add_history(message_history)
+
+                        limit_details = code_block.result.limit_details or {}
+                        tokens_used = limit_details.get("tokens_used", 0)
+                        return self._token_limit_exceeded_answer(
+                            i,
+                            tokens_used,
+                            time_start,
+                            lm_handler,
+                            limit_type=code_block.result.limit_type or "sub_agent",
+                        )
 
                 # Check if RLM is done and has a final answer.
                 final_answer = find_final_answer(iteration.response, environment=environment)
@@ -405,39 +464,47 @@ class RLM:
         tokens_used: int,
         time_start: float,
         lm_handler: LMHandler,
+        limit_type: str = "root",
     ) -> RLMChatCompletion:
         """
         Handle early termination when token limit is exceeded.
         Returns a completion indicating the session ended due to token limit.
+
+        Args:
+            limit_type: Either "root" or "sub_agent" to indicate which limit was exceeded.
         """
-        # Type narrowing: this method is only called when max_tokens is not None
-        assert self.max_tokens is not None
+        # Type narrowing: determine which limit was exceeded
+        max_limit_value = self.max_root_tokens if limit_type == "root" else self.max_sub_tokens
+        assert max_limit_value is not None
 
         time_end = time.perf_counter()
         usage = lm_handler.get_usage_summary()
 
         # Log the limit hit event
+        limit_name = "root_token_limit" if limit_type == "root" else "sub_agent_token_limit"
         if self.logger:
             self.logger.log_limit_hit(
-                limit_type="token_limit",
-                max_value=self.max_tokens,
+                limit_type=limit_name,
+                max_value=max_limit_value,
                 current_value=tokens_used,
                 iteration=iteration,
             )
 
         # Print verbose output
         self.verbose.print_token_limit_hit(
-            max_tokens=self.max_tokens,
+            token_limit=max_limit_value,
             tokens_used=tokens_used,
             iteration=iteration,
+            limit_type=limit_type,
         )
         self.verbose.print_summary(
             iteration, time_end - time_start, usage.to_dict(), stopped_reason="token_limit"
         )
 
+        agent_type = "Root agent" if limit_type == "root" else "Sub-agent"
         response_message = (
-            f"Session ended: Token limit exceeded. "
-            f"Used {tokens_used:,} tokens (limit: {self.max_tokens:,}). "
+            f"Session ended: {agent_type} token limit exceeded. "
+            f"Used {tokens_used:,} tokens (limit: {max_limit_value:,}). "
             f"Completed {iteration} iteration(s) before reaching limit."
         )
 
@@ -480,6 +547,57 @@ class RLM:
     def _env_supports_persistence(env: BaseEnv | SupportsPersistence) -> bool:
         """Check if an environment instance supports persistent mode methods."""
         return isinstance(env, SupportsPersistence)
+
+    @staticmethod
+    def _validate_backend_kwargs(kwargs: dict[str, Any], context: str) -> None:
+        """Validate backend_kwargs to catch common mistakes that cause confusing behavior.
+
+        Args:
+            kwargs: The backend_kwargs dictionary to validate
+            context: Description of where these kwargs came from (for error messages)
+
+        Raises:
+            ValueError: If deprecated or problematic parameters are found
+        """
+        # Check for deprecated max_root_tokens/max_sub_tokens in backend_kwargs
+        if "max_root_tokens" in kwargs:
+            raise ValueError(
+                f"Found 'max_root_tokens' in {context}. "
+                f"Token limits should be set via RLM constructor parameters (max_root_tokens=...), "
+                f"NOT in backend_kwargs. Remove 'max_root_tokens' from {context}. "
+                f"\n\nExample:\n"
+                f"  RLM(\n"
+                f"      backend_kwargs={{'model_name': 'gpt-4o'}},  # No token limit here\n"
+                f"      max_root_tokens=100000,  # Session-wide limit (correct place)\n"
+                f"  )"
+            )
+
+        if "max_sub_tokens" in kwargs:
+            raise ValueError(
+                f"Found 'max_sub_tokens' in {context}. "
+                f"Token limits should be set via RLM constructor parameters (max_sub_tokens=...), "
+                f"NOT in backend_kwargs. Remove 'max_sub_tokens' from {context}. "
+                f"\n\nExample:\n"
+                f"  RLM(\n"
+                f"      other_backend_kwargs=[{{'model_name': 'gpt-3.5-turbo'}}],  # No token limit here\n"
+                f"      max_sub_tokens=50000,  # Session-wide limit (correct place)\n"
+                f"  )"
+            )
+
+        # Check for unreasonably low max_tokens (per-response limit that clients understand)
+        if "max_tokens" in kwargs:
+            max_tokens = kwargs["max_tokens"]
+            if isinstance(max_tokens, int) and max_tokens < 100:
+                raise ValueError(
+                    f"Found 'max_tokens'={max_tokens} in {context}. "
+                    f"This is unreasonably low and will cause the model to generate incomplete responses. "
+                    f"\n\nIf you want to limit total SESSION tokens, use RLM constructor parameters instead:\n"
+                    f"  RLM(\n"
+                    f"      backend_kwargs={{'model_name': 'gpt-4o'}},  # Remove max_tokens\n"
+                    f"      max_root_tokens=100000,  # Session-wide limit (correct place)\n"
+                    f"  )\n\n"
+                    f"If you really need a low per-response limit for the client, use at least 100 tokens."
+                )
 
     def close(self) -> None:
         """Clean up persistent environment. Call when done with multi-turn conversations."""

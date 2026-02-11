@@ -125,6 +125,9 @@ class REPLResult:
     locals: dict
     execution_time: float | None
     llm_calls: list["RLMChatCompletion"]
+    token_limit_exceeded: bool
+    limit_type: str | None
+    limit_details: dict | None
 
     def __init__(
         self,
@@ -133,12 +136,18 @@ class REPLResult:
         locals: dict,
         execution_time: float | None = None,
         rlm_calls: list["RLMChatCompletion"] | None = None,
+        token_limit_exceeded: bool = False,
+        limit_type: str | None = None,
+        limit_details: dict | None = None,
     ):
         self.stdout = stdout
         self.stderr = stderr
         self.locals = locals
         self.execution_time = execution_time
         self.rlm_calls = rlm_calls or []
+        self.token_limit_exceeded = token_limit_exceeded
+        self.limit_type = limit_type
+        self.limit_details = limit_details
 
     def __str__(self):
         return f"REPLResult(stdout={self.stdout}, stderr={self.stderr}, locals={self.locals}, execution_time={self.execution_time}, rlm_calls={len(self.rlm_calls)})"
@@ -192,7 +201,8 @@ class RLMMetadata:
     root_model: str
     max_depth: int
     max_iterations: int
-    max_tokens: int | None
+    max_root_tokens: int | None
+    max_sub_tokens: int | None
     backend: str
     backend_kwargs: dict[str, Any]
     environment_type: str
@@ -204,7 +214,8 @@ class RLMMetadata:
             "root_model": self.root_model,
             "max_depth": self.max_depth,
             "max_iterations": self.max_iterations,
-            "max_tokens": self.max_tokens,
+            "max_root_tokens": self.max_root_tokens,
+            "max_sub_tokens": self.max_sub_tokens,
             "backend": self.backend,
             "backend_kwargs": {k: _serialize_value(v) for k, v in self.backend_kwargs.items()},
             "environment_type": self.environment_type,

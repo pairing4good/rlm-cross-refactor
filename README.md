@@ -42,17 +42,36 @@ pip install rlms
 ```
 
 > [!IMPORTANT]
-> **Token Limit & Cost Protection**: RLM has a **default limit of 1,000,000 tokens per session** to prevent unexpectedly large bills. This costs approximately:
+> **Token Limit & Cost Protection**: RLM has **default limits of 1,000,000 tokens** for both root agent and sub-agent calls to prevent unexpectedly large bills. This costs approximately:
 > - GPT-3.5 Turbo: ~$1 per session
 > - GPT-4o: ~$6 per session  
 > - GPT-4 Turbo: ~$20 per session
 > - Claude Opus: ~$45 per session
 >
-> To change this limit:
+> **Configure limits via RLM constructor parameters** (NOT in `backend_kwargs`):
 > ```python
-> rlm = RLM(max_tokens=500_000)  # Reduce to 500k tokens
-> rlm = RLM(max_tokens=None)      # Remove limit (use with caution!)
+> # ✅ Correct
+> rlm = RLM(
+>     backend_kwargs={"model_name": "gpt-4o"},  # No token limits here
+>     max_root_tokens=500_000,  # Session limit for root agent
+>     max_sub_tokens=500_000,   # Session limit for sub-agents
+> )
+> 
+> # ❌ Wrong - will cause validation error
+> rlm = RLM(
+>     backend_kwargs={
+>         "model_name": "gpt-4o",
+>         "max_root_tokens": 500_000,  # Don't do this!
+>     }
+> )
 > ```
+> 
+> **Root vs Sub-Agent Tokens**: 
+> - `max_root_tokens`: Limits tokens used by the main orchestration agent (depth=0)
+> - `max_sub_tokens`: Limits cumulative tokens used by `llm_query()` calls in generated code (depth=1)
+>
+> **Minimum Token Requirements**: Each limit must be at least **50 tokens** (typical minimum for a single LM call). 
+> Limits below this threshold will cause immediate termination before any calls are made.
 
 The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
 ```python
@@ -68,9 +87,9 @@ print(rlm.completion("Print me the first 100 powers of two, each on a newline.")
 ```
 
 **Understanding Your Token Budget:**
-- Each session (one `completion()` call) is limited to 1M tokens by default
+- Each session (one `completion()` call) has separate limits for root and sub-agents (1M tokens each by default)
 - You can check token usage: `result.usage_summary.to_dict()`
-- Adjust the limit with `max_tokens` parameter (see [Token Limits](#important-token-limit--cost-protection) above)
+- Adjust limits with `max_root_tokens` and `max_sub_tokens` parameters (see [Token Limits](#important-token-limit--cost-protection) above)
 
 <details>
 <summary><b>Manual Setup</b></summary>

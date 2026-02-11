@@ -403,29 +403,41 @@ class VerbosePrinter:
         self.console.print(Rule(style=COLORS["border"], characters="═"))
         self.console.print()
 
-    def print_token_limit_hit(self, max_tokens: int, tokens_used: int, iteration: int) -> None:
-        """Print a warning when token limit is exceeded."""
+    def print_token_limit_hit(
+        self, token_limit: int, tokens_used: int, iteration: int, limit_type: str = "root"
+    ) -> None:
+        """Print a warning when token limit is exceeded.
+
+        Args:
+            token_limit: The token limit value that was exceeded.
+            tokens_used: The number of tokens used.
+            iteration: The iteration number when limit was hit.
+            limit_type: Either "root" or "sub_agent" to indicate which limit was exceeded.
+        """
         if not self.enabled:
             return
         assert self.console is not None
 
         # Title
+        agent_type = "Root Agent" if limit_type == "root" else "Sub-Agent"
         title = Text()
         title.append("⚠ ", style=STYLE_WARNING)
-        title.append("Token Limit Exceeded", style=Style(color=COLORS["warning"], bold=True))
+        title.append(
+            f"{agent_type} Token Limit Exceeded", style=Style(color=COLORS["warning"], bold=True)
+        )
 
         # Content
         content = Text()
-        content.append("Maximum tokens: ", style=STYLE_TEXT)
-        content.append(f"{max_tokens:,}\n", style=STYLE_ACCENT)
-        content.append("Tokens used: ", style=STYLE_TEXT)
+        content.append(f"Maximum {agent_type.lower()} tokens: ", style=STYLE_TEXT)
+        content.append(f"{token_limit:,}\n", style=STYLE_ACCENT)
+        content.append(f"Tokens used ({agent_type.lower()}): ", style=STYLE_TEXT)
         content.append(f"{tokens_used:,}\n\n", style=STYLE_WARNING)
         content.append(
             f"Session ended after {iteration} iteration(s).\n",
             style=STYLE_MUTED,
         )
         content.append(
-            "The session was stopped before completion to stay within the token budget.",
+            f"The session was stopped before completion because {agent_type.lower()} calls exceeded the token budget.",
             style=STYLE_MUTED,
         )
 

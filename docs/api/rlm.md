@@ -45,7 +45,8 @@ RLM(
     depth: int = 0,
     max_depth: int = 1,
     max_iterations: int = 30,
-    max_tokens: int | None = None,
+    max_root_tokens: int | None = 1_000_000,
+    max_sub_tokens: int | None = 1_000_000,
     custom_system_prompt: str | None = None,
     other_backends: list[str] | None = None,
     other_backend_kwargs: list[dict] | None = None,
@@ -94,11 +95,20 @@ Configuration passed to the LM client. Required fields vary by backend:
 | `vllm` | `model_name`, `base_url` | — |
 | `litellm` | `model_name` | varies by provider |
 
+{: .warning }
+> **Do NOT include token limit parameters in `backend_kwargs`.** Use RLM constructor parameters (`max_root_tokens`, `max_sub_tokens`) for session-wide limits instead.
+
 ```python
+# ✅ Correct usage
 backend_kwargs = {
     "api_key": "sk-...",
     "model_name": "gpt-4o",
-    "base_url": "https://api.openai.com/v1",  # Optional
+}
+
+# ❌ Wrong - will cause validation error
+backend_kwargs = {
+    "model_name": "gpt-4o",
+    "max_root_tokens": 8192,  # Don't do this!
 }
 ```
 
@@ -188,18 +198,18 @@ rlm = RLM(
 
 ---
 
-#### `max_tokens`
+#### `max_root_tokens`
 {: .no_toc }
 
 **Type:** `int | None`  
 **Default:** `1_000_000` (1 million tokens)
 
-Maximum total tokens (input + output combined) allowed per `completion()` session. When this limit is reached or exceeded, the session ends early to stay within the token budget.
+Maximum total tokens (input + output combined) allowed for the **root agent** (depth=0) per `completion()` session. This tracks the main orchestration model's token usage. When this limit is reached or exceeded, the session ends early.
 
 {: .warning }
 > **This is a cost protection feature!** The default limit prevents unexpectedly large API bills.
 
-**Cost implications of 1M tokens:**
+**Cost implications of 1M root tokens:**
 
 | Model | Cost for 1M Tokens |
 |:------|:-------------------|
@@ -211,44 +221,45 @@ Maximum total tokens (input + output combined) allowed per `completion()` sessio
 | Claude Opus | ~$45 |
 
 **Token counting:**
-- Includes all LM calls (main model + sub-LM calls via `llm_query()`)
-- Tracks cumulative usage across all iterations in a single session
+- Tracks only the root agent's LM calls (the main model doing orchestration)
+- Does NOT include sub-LM calls (those are tracked separately by `max_sub_tokens`)
+- Cumulative across all iterations in a single session
 - Resets for each new `completion()` call (even in persistent mode)
 
 **Examples:**
 
 ```python
-# Use default 1M token limit (recommended for most use cases)
+# Use default 1M token limit for root agent (recommended)
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    # max_tokens=1_000_000 is implicit
+    # max_root_tokens=1_000_000 is implicit
 )
 
-# Reduce limit for stricter budget control
+# Reduce root limit for stricter budget control
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    max_tokens=100_000,  # Limit to ~$0.60 per session
+    max_root_tokens=100_000,  # Limit root to ~$0.60 per session
 )
 
-# Increase limit for complex, expensive tasks
+# Increase root limit for complex planning tasks
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    max_tokens=5_000_000,  # Allow up to ~$30 per session
+    max_root_tokens=5_000_000,  # Allow up to ~$30 per session for root
 )
 
-# Remove limit entirely (not recommended - use with caution!)
+# Remove root limit entirely (not recommended - use with caution!)
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
-    max_tokens=None,  # Unlimited - can result in large bills!
+    max_root_tokens=None,  # Unlimited - can result in large bills!
 )
 
 result = rlm.completion("Analyze this dataset...")
-# If limit is hit:
-# result.response == "Session ended: Token limit exceeded. Used 1,000,234 tokens..."
+# If root limit is hit:
+# result.response == "Session ended: Root agent token limit exceeded. Used 1,000,234 tokens..."
 ```
 
 **When the limit is exceeded:**
@@ -258,10 +269,62 @@ result = rlm.completion("Analyze this dataset...")
 - Usage summary and execution time are still populated
 
 **Use cases:**
-- **Budget control**: Prevent runaway costs on complex tasks (default behavior)
-- **Cost management**: Set organization-wide limits in production
+- **Budget control**: Prevent runaway costs for the orchestration model
+- **Multi-tier routing**: Set different limits for root vs. sub-agents
 - **Development**: Use lower limits during testing/debugging
 - **Production**: Increase limits for known expensive workflows
+
+---
+
+#### `max_sub_tokens`
+{: .no_toc }
+
+**Type:** `int | None`  
+**Default:** `1_000_000` (1 million tokens)
+
+Maximum total tokens (input + output combined) allowed for **sub-agents** (depth=1) per `completion()` session. This tracks all `llm_query()` and `llm_query_batched()` calls made from generated code. When this limit is reached or exceeded, the session ends early.
+
+{: .warning }
+> **Tracks cumulative sub-LM calls!** If your code makes 100 `llm_query()` calls, all their tokens count toward this limit.
+
+**Token counting:**
+- Tracks only sub-agent LM calls (via `llm_query()` in executed code)
+- Does NOT include root agent calls (those are tracked by `max_root_tokens`)
+- Cumulative across all sub-calls in a single session
+- Resets for each new `completion()` call (even in persistent mode)
+
+**Multi-tier routing example:**
+
+```python
+# Root uses expensive model, subs use cheap model
+rlm = RLM(
+    # Root: GPT-4o for planning
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-4o"},
+    max_root_tokens=100_000,  # Limit root to 100k tokens
+    
+    # Sub-agents: GPT-4o-mini for execution
+    other_backends=["openai"],
+    other_backend_kwargs=[{"model_name": "gpt-4o-mini"}],
+    max_sub_tokens=1_000_000,  # Allow 1M tokens for all sub-queries
+)
+
+# The root model plans the approach with a modest budget
+# Sub-queries can make many calls with a larger total budget
+result = rlm.completion("Process 1000 customer records")
+```
+
+**When the limit is exceeded:**
+- The session stops before the next `llm_query()` call
+- Returns: `"Session ended: Sub-agent token limit exceeded. Used X tokens..."`
+- The event is logged (if a logger is configured)
+- Usage summary shows both root and sub-agent token usage
+
+**Use cases:**
+- **Multi-tier cost control**: Limit sub-queries separately from root planning
+- **Batch processing**: Set higher limits when processing many items
+- **Budget allocation**: Give more budget to sub-agents for parallel processing
+- **Safety net**: Prevent runaway recursive calls
 
 ---
 
@@ -297,15 +360,21 @@ rlm = RLM(
 
 Register additional LM backends available for sub-calls via `llm_query()`.
 
+{: .warning }
+> **Do NOT include token limit parameters in `other_backend_kwargs`.** Use the `max_sub_tokens` constructor parameter for session-wide limits instead.
+
 ```python
 rlm = RLM(
     backend="openai",
     backend_kwargs={"model_name": "gpt-4o"},
+    max_root_tokens=100000,  # Root agent session limit
+    
     other_backends=["anthropic", "openai"],
     other_backend_kwargs=[
-        {"model_name": "claude-sonnet-4-20250514"},
+        {"model_name": "claude-sonnet-4-20250514"},  # No token limits here
         {"model_name": "gpt-4o-mini"},
     ],
+    max_sub_tokens=50000,  # Sub-agent session limit
 )
 
 # Inside REPL, code can call:
