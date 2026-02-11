@@ -26,9 +26,7 @@ class MockLM(BaseLM):
         )
 
     def get_last_usage(self):
-        return ModelUsageSummary(
-            total_calls=1, total_input_tokens=10, total_output_tokens=10
-        )
+        return ModelUsageSummary(total_calls=1, total_input_tokens=10, total_output_tokens=10)
 
 
 class MockLMWithTokenTracking(BaseLM):
@@ -112,9 +110,7 @@ class MockLMWithResponses(BaseLM):
         if isinstance(prompt, str):
             input_tokens = max(len(prompt) // 4, 1)
         elif isinstance(prompt, list):
-            input_tokens = max(
-                sum(len(str(m.get("content", ""))) for m in prompt) // 4, 1
-            )
+            input_tokens = max(sum(len(str(m.get("content", ""))) for m in prompt) // 4, 1)
         else:
             input_tokens = 10
 

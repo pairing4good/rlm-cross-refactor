@@ -29,6 +29,9 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
+[project.scripts]
+rlm-refactor = "rlm.refactor.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/alexzhang13/rlm"
 Repository = "https://github.com/alexzhang13/rlm"

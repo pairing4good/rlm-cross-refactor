@@ -93,13 +93,17 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         return {"responses": results}
 
 
-def _build_exec_script(code: str, proxy_port: int, depth: int = 1) -> str:
+def _build_exec_script(
+    code: str, proxy_port: int, depth: int = 1, working_dir: str | None = None
+) -> str:
     """Build execution script for the container."""
     code_b64 = base64.b64encode(code.encode()).decode()
+    extra_imports = ", subprocess, glob, shutil, pathlib" if working_dir else ""
+    chdir_line = "os.chdir('/repos')\n" if working_dir else ""
 
     return textwrap.dedent(
         f'''
-import sys, io, json, base64, traceback, os, requests
+import sys, io, json, base64, traceback, os, requests{extra_imports}
 try:
     import dill
 except ImportError:
@@ -162,7 +166,7 @@ def SHOW_VARS():
 
 _globals = {{"__builtins__": __builtins__, "__name__": "__main__", "llm_query": llm_query, "llm_query_batched": llm_query_batched, "FINAL_VAR": FINAL_VAR, "SHOW_VARS": SHOW_VARS}}
 
-code = base64.b64decode("{code_b64}").decode()
+{chdir_line}code = base64.b64decode("{code_b64}").decode()
 stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
 old_stdout, old_stderr = sys.stdout, sys.stderr
 
@@ -199,6 +203,7 @@ class DockerREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        working_dir: str | None = None,
         **kwargs,
     ):
         if persistent:
@@ -209,6 +214,7 @@ class DockerREPL(NonIsolatedEnv):
 
         self.image = image
         self.lm_handler_address = lm_handler_address
+        self.working_dir = os.path.abspath(working_dir) if working_dir else None
         self.container_id: str | None = None
         self.proxy_server: HTTPServer | None = None
         self.proxy_thread: threading.Thread | None = None
@@ -247,24 +253,25 @@ class DockerREPL(NonIsolatedEnv):
         self.proxy_thread.start()
 
         # Start Docker container
-        result = subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--rm",
-                "-v",
-                f"{self.temp_dir}:/workspace",
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                self.image,
-                "tail",
-                "-f",
-                "/dev/null",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        docker_cmd = [
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            "-v",
+            f"{self.temp_dir}:/workspace",
+        ]
+        if self.working_dir:
+            docker_cmd += ["-v", f"{self.working_dir}:/repos"]
+        docker_cmd += [
+            "--add-host",
+            "host.docker.internal:host-gateway",
+            self.image,
+            "tail",
+            "-f",
+            "/dev/null",
+        ]
+        result = subprocess.run(docker_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to start container: {result.stderr}")
 
@@ -275,6 +282,34 @@ class DockerREPL(NonIsolatedEnv):
             ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
             capture_output=True,
         )
+
+        # Install git and configure safe directories for bind-mounted repos
+        if self.working_dir:
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    self.container_id,
+                    "bash",
+                    "-c",
+                    "apt-get update -qq && apt-get install -y -qq git > /dev/null 2>&1",
+                ],
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    self.container_id,
+                    "git",
+                    "config",
+                    "--global",
+                    "--add",
+                    "safe.directory",
+                    "*",
+                ],
+                capture_output=True,
+            )
 
     def load_context(self, context_payload: dict | list | str):
         """Load context by writing to a file in the mounted workspace."""
@@ -302,7 +337,7 @@ class DockerREPL(NonIsolatedEnv):
         with self._calls_lock:
             self.pending_calls.clear()
 
-        script = _build_exec_script(code, self.proxy_port, self.depth)
+        script = _build_exec_script(code, self.proxy_port, self.depth, self.working_dir)
         result = subprocess.run(
             ["docker", "exec", self.container_id, "python", "-c", script],
             capture_output=True,
