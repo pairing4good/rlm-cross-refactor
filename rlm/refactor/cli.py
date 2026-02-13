@@ -273,13 +273,16 @@ def main(argv: list[str] | None = None) -> None:
 
     # Step 8: Run refactoring
     root_prompt = instructions[:500] if len(instructions) > 500 else instructions
-    
+
     # Show spinner only when verbose mode is disabled (verbose output provides its own progress)
     if verbose:
         console.print("[bold cyan]→[/bold cyan] Starting RLM agent...\n")
         result = rlm.completion(prompt=instructions, root_prompt=root_prompt)
     else:
-        with console.status("[bold cyan]RLM agent iterating through your instructions...[/bold cyan]", spinner="dots"):
+        with console.status(
+            "[bold cyan]RLM agent iterating through your instructions...[/bold cyan]",
+            spinner="dots",
+        ):
             result = rlm.completion(prompt=instructions, root_prompt=root_prompt)
 
     # Step 9: Display results
