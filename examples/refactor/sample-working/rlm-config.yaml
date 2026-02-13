@@ -1,0 +1,96 @@
+# =============================================================================
+# RLM REFACTORING CONFIGURATION
+# =============================================================================
+# All fields are optional. Defaults used if missing.
+# Environment is hardcoded to 'docker' for safety (see rlm/refactor/cli.py)
+
+# =============================================================================
+# ROOT MODEL
+# =============================================================================
+
+# Backend provider: openai, anthropic, bedrock, gemini, portkey
+backend: bedrock
+
+backend_kwargs:
+  # Model identifier (REQUIRED)
+  # Bedrock examples: us.anthropic.claude-3-5-sonnet-20241022-v2:0, meta.llama3-70b-instruct-v1:0
+  # OpenAI examples: gpt-4o, gpt-4o-mini, gpt-4-turbo
+  # Anthropic examples: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022
+  # Gemini examples: gemini-2.0-flash-exp, gemini-1.5-pro
+  model_name: us.anthropic.claude-3-5-sonnet-20241022-v2:0
+  
+  # AWS region (Bedrock only)
+  region_name: us-east-1
+  
+  # Optional: Max tokens per response (default: 4096 for Bedrock, 32768 for Anthropic)
+  # max_tokens: 8000
+  
+  # Optional: Sampling temperature 0.0-2.0 (default: 1.0)
+  # temperature: 1.0
+  
+  # Optional: Nucleus sampling 0.0-1.0 (default: varies by provider)
+  # top_p: 0.999
+
+# =============================================================================
+# SUB-MODEL (OPTIONAL - Multi-tier cost optimization)
+# =============================================================================
+# Configure a cheaper model for sub-tasks (file reading, simple analysis).
+# Root model (above) handles strategic planning; sub-model handles execution.
+# Cost savings: ~90% (Haiku vs Sonnet, or gpt-4o-mini vs gpt-4o)
+
+other_backends:
+  - bedrock
+
+other_backend_kwargs:
+  - model_name: us.anthropic.claude-3-5-haiku-20241022-v1:0
+    region_name: us-east-1
+    # Optional: max_tokens, temperature, top_p (same as above)
+
+# =============================================================================
+# TOKEN BUDGETS (Session-wide limits to prevent runaway costs)
+# =============================================================================
+
+# Max total tokens for root model across all iterations (default: 1,000,000)
+# Cost of 1M tokens: $3-$15 (Sonnet input/output mix)
+max_root_tokens: 50000
+
+# Max total tokens for sub-model across all llm_query() calls (default: 1,000,000)
+# Cost of 1M tokens: $0.25-$1.25 (Haiku input/output mix)
+max_sub_tokens: 25000
+
+# =============================================================================
+# EXECUTION SETTINGS
+# =============================================================================
+
+# Optional: Max REPL iterations before stopping (default: 30)
+# max_iterations: 20
+
+# Optional: Enable rich console output with colors/progress bars (default: false)
+# verbose: true
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+# Optional: Log directory relative to working directory (default: rlm_logs)
+# Stores JSONL trajectory logs for debugging and analysis
+# log_dir: rlm-logs
+
+# =============================================================================
+# COST REFERENCE (2026 pricing)
+# =============================================================================
+# Bedrock Claude (on-demand):
+#   - claude-3-5-sonnet-v2: $3/M input, $15/M output
+#   - claude-3-5-haiku: $0.25/M input, $1.25/M output (~90% savings)
+#
+# OpenAI:
+#   - gpt-4o: $2.50/M input, $10/M output
+#   - gpt-4o-mini: $0.15/M input, $0.60/M output (~90% savings)
+#
+# Anthropic API:
+#   - claude-sonnet-4: $3/M input, $15/M output
+#   - claude-3-5-haiku: $0.25/M input, $1.25/M output (~90% savings)
+#
+# Gemini:
+#   - gemini-2.0-flash: $0.10/M input, $0.30/M output
+#   - gemini-1.5-pro: $1.25/M input, $5/M output

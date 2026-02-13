@@ -16,7 +16,7 @@ rlm = RLM(
         "model_name": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "region_name": "us-east-1",
     },
-    environment="local",
+    environment="docker",
     max_root_tokens=80000,  # Session-wide cumulative limit
     max_depth=1,
     logger=logger,

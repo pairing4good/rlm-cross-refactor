@@ -93,13 +93,17 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         return {"responses": results}
 
 
-def _build_exec_script(code: str, proxy_port: int, depth: int = 1) -> str:
+def _build_exec_script(
+    code: str, proxy_port: int, depth: int = 1, working_dir: str | None = None
+) -> str:
     """Build execution script for the container."""
     code_b64 = base64.b64encode(code.encode()).decode()
+    extra_imports = ", subprocess, glob, shutil, pathlib" if working_dir else ""
+    chdir_line = "os.chdir('/repos')\n" if working_dir else ""
 
     return textwrap.dedent(
         f'''
-import sys, io, json, base64, traceback, os, requests
+import sys, io, json, base64, traceback, os, requests{extra_imports}
 try:
     import dill
 except ImportError:
@@ -162,7 +166,7 @@ def SHOW_VARS():
 
 _globals = {{"__builtins__": __builtins__, "__name__": "__main__", "llm_query": llm_query, "llm_query_batched": llm_query_batched, "FINAL_VAR": FINAL_VAR, "SHOW_VARS": SHOW_VARS}}
 
-code = base64.b64decode("{code_b64}").decode()
+{chdir_line}code = base64.b64decode("{code_b64}").decode()
 stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
 old_stdout, old_stderr = sys.stdout, sys.stderr
 
@@ -199,6 +203,8 @@ class DockerREPL(NonIsolatedEnv):
         setup_code: str | None = None,
         persistent: bool = False,
         depth: int = 1,
+        working_dir: str | None = None,
+        docker_log_path: str | None = None,
         **kwargs,
     ):
         if persistent:
@@ -209,6 +215,8 @@ class DockerREPL(NonIsolatedEnv):
 
         self.image = image
         self.lm_handler_address = lm_handler_address
+        self.working_dir = os.path.abspath(working_dir) if working_dir else None
+        self.docker_log_path = docker_log_path
         self.container_id: str | None = None
         self.proxy_server: HTTPServer | None = None
         self.proxy_thread: threading.Thread | None = None
@@ -228,8 +236,35 @@ class DockerREPL(NonIsolatedEnv):
         if setup_code:
             self.execute_code(setup_code)
 
+    def _log_docker_event(self, level: str, message: str, details: dict | None = None):
+        """Log Docker-specific events to persistent file."""
+        if not self.docker_log_path:
+            return
+
+        import json
+        from datetime import datetime
+
+        entry = {
+            "type": "docker",
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "message": message,
+            "container_id": self.container_id,
+            "details": details or {},
+        }
+
+        with open(self.docker_log_path, "a") as f:
+            json.dump(entry, f)
+            f.write("\n")
+
     def setup(self):
         """Start the proxy server and Docker container."""
+        self._log_docker_event(
+            "INFO",
+            "Starting Docker setup",
+            {"image": self.image, "working_dir": self.working_dir},
+        )
+
         # Start LLM proxy server
         handler = type(
             "Handler",
@@ -247,34 +282,93 @@ class DockerREPL(NonIsolatedEnv):
         self.proxy_thread.start()
 
         # Start Docker container
-        result = subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--rm",
-                "-v",
-                f"{self.temp_dir}:/workspace",
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                self.image,
-                "tail",
-                "-f",
-                "/dev/null",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        docker_cmd = [
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            "-v",
+            f"{self.temp_dir}:/workspace",
+        ]
+        if self.working_dir:
+            docker_cmd += ["-v", f"{self.working_dir}:/repos"]
+        docker_cmd += [
+            "--add-host",
+            "host.docker.internal:host-gateway",
+            self.image,
+            "tail",
+            "-f",
+            "/dev/null",
+        ]
+        result = subprocess.run(docker_cmd, capture_output=True, text=True)
         if result.returncode != 0:
+            self._log_docker_event(
+                "ERROR",
+                "Failed to start container",
+                {
+                    "command": " ".join(docker_cmd),
+                    "returncode": result.returncode,
+                    "stderr": result.stderr,
+                    "stdout": result.stdout,
+                },
+            )
             raise RuntimeError(f"Failed to start container: {result.stderr}")
 
         self.container_id = result.stdout.strip()
+        self._log_docker_event("INFO", "Container started", {"container_id": self.container_id})
 
         # Install dependencies
-        subprocess.run(
+        pip_result = subprocess.run(
             ["docker", "exec", self.container_id, "pip", "install", "-q", "dill", "requests"],
             capture_output=True,
+            text=True,
         )
+        if pip_result.returncode != 0:
+            self._log_docker_event(
+                "WARNING",
+                "Pip install had issues",
+                {"stderr": pip_result.stderr, "stdout": pip_result.stdout},
+            )
+        else:
+            self._log_docker_event("INFO", "Dependencies installed successfully")
+
+        # Install git and configure safe directories for bind-mounted repos
+        if self.working_dir:
+            git_result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    self.container_id,
+                    "bash",
+                    "-c",
+                    "apt-get update -qq && apt-get install -y -qq git 2>&1",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if git_result.returncode != 0:
+                self._log_docker_event(
+                    "ERROR",
+                    "Git installation failed",
+                    {"stderr": git_result.stderr, "stdout": git_result.stdout},
+                )
+            else:
+                self._log_docker_event("INFO", "Git installed successfully")
+
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    self.container_id,
+                    "git",
+                    "config",
+                    "--global",
+                    "--add",
+                    "safe.directory",
+                    "*",
+                ],
+                capture_output=True,
+            )
 
     def load_context(self, context_payload: dict | list | str):
         """Load context by writing to a file in the mounted workspace."""
@@ -302,12 +396,22 @@ class DockerREPL(NonIsolatedEnv):
         with self._calls_lock:
             self.pending_calls.clear()
 
-        script = _build_exec_script(code, self.proxy_port, self.depth)
+        script = _build_exec_script(code, self.proxy_port, self.depth, self.working_dir)
         result = subprocess.run(
             ["docker", "exec", self.container_id, "python", "-c", script],
             capture_output=True,
             text=True,
         )
+
+        if result.returncode != 0:
+            self._log_docker_event(
+                "WARNING",
+                "Code execution failed",
+                {
+                    "returncode": result.returncode,
+                    "stderr": result.stderr[:500] if result.stderr else "",
+                },
+            )
 
         with self._calls_lock:
             calls = self.pending_calls.copy()
@@ -333,9 +437,24 @@ class DockerREPL(NonIsolatedEnv):
             )
 
     def cleanup(self):
+        self._log_docker_event("INFO", "Starting cleanup")
+
         if hasattr(self, "container_id") and self.container_id:
-            subprocess.run(["docker", "stop", self.container_id], capture_output=True)
+            stop_result = subprocess.run(
+                ["docker", "stop", self.container_id],
+                capture_output=True,
+                text=True,
+            )
+            if stop_result.returncode != 0:
+                self._log_docker_event(
+                    "WARNING",
+                    "Failed to stop container",
+                    {"stderr": stop_result.stderr},
+                )
+            else:
+                self._log_docker_event("INFO", "Container stopped")
             self.container_id = None
+
         if hasattr(self, "proxy_server") and self.proxy_server:
             self.proxy_server.shutdown()
             self.proxy_server = None
@@ -343,6 +462,8 @@ class DockerREPL(NonIsolatedEnv):
             import shutil
 
             shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+        self._log_docker_event("INFO", "Cleanup complete")
 
     def __enter__(self):
         return self
